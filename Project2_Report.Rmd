@@ -1,0 +1,475 @@
+---
+title: "Project 2 / Report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    theme: cerulean
+    highlight: zenburn
+  html_notebook: default
+editor_options: 
+  chunk_output_type: inline
+---
+  
+# A conference survey 
+  
+```{r Init_lib_theme, message=FALSE, warning=FALSE}
+
+# Deactivate messages and warnings from running code, show code chunks
+
+# Start with loading all the necessary libraries
+library(readr)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(rmarkdown)
+library(ggplot2)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(knitr)
+library(kableExtra)
+
+# Load personal theme for ggplot2
+myTheme <- function(base_size = 7.5,
+                    base_family = "sans",
+                    base_line_size = base_size / 22,
+                    base_rect_size = base_size / 22){
+  theme_minimal(base_size=base_size,
+                base_family=base_family,
+                base_line_size=base_line_size,
+                base_rect_size=base_rect_size) %+replace%
+  theme(
+  line = element_line(
+    size = base_line_size,
+    linetype = 1,
+    lineend = "round",
+    color = "grey75"
+    ),
+  text = element_text(
+    face = "plain",
+    color = "grey25",
+    family = "sans",
+    size = base_size,
+    hjust = 0,
+    vjust = 0,
+    angle = 0,
+    lineheight = 1,
+    margin= margin(),
+    debug=FALSE
+    ),
+  plot.background = element_rect(
+    fill = "grey98",
+    color = "grey75",
+    size = 1,
+    linetype = 1
+    ),
+  panel.background = element_rect(fill="grey95",color="grey75"),
+  axis.line = element_line(color="grey50", size=0.25),
+  axis.ticks = element_line(color="grey50", size=0.25),
+  axis.text = element_text(face="bold", size = 9),
+  axis.title = element_text(face = "bold", size = 11, hjust = 0.5, vjust = 0),
+  legend.text = element_text(face = "bold"),
+  legend.title = element_text(face = "bold", size = 8),
+  panel.grid.major.x = element_blank(),
+  panel.grid.major.y = element_line(color="grey75"),
+  panel.grid.minor = element_blank(),
+  plot.margin=unit(c(12,12,12,12), "points"),
+#  panel.spacing = unit(c(0,0,0,0), "points"),
+  plot.title = element_text(face = "bold", size = 12),
+  plot.subtitle = element_text(
+    face = "italic",
+    size = 10,
+    margin = margin(3,0,12,0,"pt")
+    ),
+  complete = TRUE
+)
+}
+
+```
+  
+-------------------------------------------------------------------  
+  
+*Some data was collected from a survey of participants at a conference in *
+*the Netherlands. The participants were asked the following questions:*  
+  
+*-What university do you come from?*  
+*-What is your position?*  
+*-How many employees are there in your research group?*  
+*-How many Ph.D. students are there in your research group?*  
+*-How many postdocs are there in your research group?*  
+*-How many professors are there in your research group?*  
+  
+  
+```{r Data_import_prep, message=FALSE, warning=FALSE}
+
+### Chunk of code to prepare the data in different tables
+
+# Import the data (orinigal CSV files previously copied in the project folder)
+tbl_survey_raw <- read_csv("survey.csv")
+
+# Clean the data of import (rename unnamed columns, clean names)
+tbl_survey_clean <- tbl_survey_raw %>% 
+  rename(participant_id =X1) %>% 
+  clean_names()  
+
+```
+
+  
+-------------------------------------------------------------------  
+
+## Part 1 / Answer 3 questions  
+  
+In the first part of this report, I will try to answer these 3 questions :  
+  
+*1.*  How many survey participants were there?  
+*2.*  What are the data types of each column?  
+*3.*  What are the top 3 universities with the most survey participants?  
+  
+  
+  
+--------------------------------------------------------------------  
+  
+```{r Var_p1.1, message=FALSE, warning=FALSE}
+
+# Value of the number of participants
+participants_count <- tbl_survey_clean %>% 
+  summarise(participants_count = n()) %>% 
+  pull() 
+
+```
+  
+### *1.* How many survey participants were there?  
+  
+There were **`r participants_count`** participants in this survey.  
+  
+  
+  
+--------------------------------------------------------------------  
+  
+```{r Var_p1.2, message=FALSE, warning=FALSE}
+
+# Get the data type of each column
+list_col_datatype <- tbl_survey_clean %>% 
+  map(class) %>% 
+  unlist()
+
+# And the column associated to the datatype list
+list_col_names <- tbl_survey_clean %>% 
+  colnames
+
+# And merge into a tibble
+tbl_columns <- bind_cols(name=list_col_names,datatype=list_col_datatype)
+
+```
+ 
+### *2.* What are the data types of each column?  
+  
+Here is a table showing the name (after cleanup) and data type for each column :  
+  
+  
+```{r Tbl_p1.2, message=FALSE, warning=FALSE}
+
+tbl_columns %>% 
+  mutate(datatype=cell_spec(datatype, "html", align = "justify")) %>% 
+  rename("Name"=name,"Data type"=datatype) %>% 
+  kable("html", escape = F) %>% 
+  kable_styling(bootstrap_options = c("striped", "condensed", "responsive"),
+                font_size = 12) %>% 
+  column_spec(column = 1, width = "4cm") %>% 
+  column_spec(column = 2, width = "1cm")
+
+```
+  
+  
+
+--------------------------------------------------------------------  
+
+### *3.* What are the top 3 universities with the most survey participants?  
+  
+```{r Var_p1.3, message=FALSE, warning=FALSE}
+
+# Top 3 universities by number of participants
+tbl_top3_universities_by_participants <- tbl_survey_clean %>% 
+  group_by(university) %>% 
+  summarise(count_part_by_university=n()) %>% 
+  arrange(desc(count_part_by_university))
+
+```
+  
+Here is a table showing the top 3 universities regarding the number of survey
+participants :    
+
+```{r Tbl_p1.3, message=FALSE, warning=FALSE}
+
+tbl_top3_universities_by_participants %>% 
+  mutate(count_part_by_university=cell_spec(
+    count_part_by_university, "html", align = "justify")
+    ) %>%
+  top_n(3,count_part_by_university) %>% 
+  rename("University"=university,
+         "Number of participants"=count_part_by_university) %>% 
+  kable("html", escape = F) %>% 
+  kable_styling(bootstrap_options = c("striped", "condensed", "responsive"),
+                font_size = 12) %>% 
+  column_spec(column = 1, width = "4cm") %>% 
+  column_spec(column = 2, width = "1cm")
+
+```
+  
+  
+  
+-------------------------------------------------------------------  
+  
+  
+## Part 2 / Horizontal bar graph  
+  
+For the second part of this report, here is a horizonzal bar graph of the 
+number of survey participants according to their different position.  
+  
+```{r Graph_p2, message=FALSE, warning=FALSE}
+
+summary_for_hbar_graph <- tbl_survey_clean %>% 
+  group_by(position) %>% 
+  summarize(count_per_position=n()) %>% 
+  ungroup() %>% 
+  arrange(count_per_position)
+
+# Reorder the data according to count_per_position (set 'levels' in table)
+summary_for_hbar_graph$position <- factor(
+  summary_for_hbar_graph$position, 
+  levels = summary_for_hbar_graph$position[order(
+    summary_for_hbar_graph$count_per_position
+    )])
+
+summary_for_hbar_graph %>% 
+  ggplot(mapping = aes(x = position, y = count_per_position)) +
+  geom_bar(aes(fill = position), stat="identity", position = "stack") +
+  scale_fill_manual(
+    "Position",
+    values = c("Postdoc"="firebrick1",
+               "PhD Student"="firebrick3",
+               "Assistant Professor"="springgreen2",
+               "Associate Professor"="springgreen3",
+               "Professor"="springgreen4",
+               "Principal"="deepskyblue1",
+               "Head of graduate studies"="deepskyblue3",
+               "Head of department"="deepskyblue4"
+               )
+    ) +
+  coord_flip() +
+  labs(
+    title = "Number of participants by position",
+    subtitle = str_glue("Simple graph showing a distribution of participants ",
+                        "by position  "),
+    x = "Position",
+    y = "Number of participants"
+    ) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(12,3,3,3,"pt")),
+    axis.title.y = element_text(hjust = 0.9),
+    axis.text.y = element_text(
+      size = 9, face = "bold",
+      margin = margin(0,6,0,0,"pt")
+      ),
+    legend.position = "none",
+    panel.grid.major.x = element_line(color="grey75"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_line(color="grey75")
+  )
+
+```
+  
+### Part 2 Findings  
+  
+The number of participants by position follows the tendency of the number of 
+people in universities (there are more students than professors, and more 
+professors than Deans).  
+  
+  
+-------------------------------------------------------------------  
+    
+  
+## Part 3 / Correct column 'Sizes' and plot a bar chart of the new distribution
+    
+For the third part of this report, we have to correct the column 'sizes'. A
+mistake due to a misunderstanding made the bins' size slightly different than
+desired. After correction with a bit of code, I will present a bar plot of the 
+new distribution of sizes.  
+  
+```{r Graph_p3, message=FALSE, warning=FALSE}
+
+# Recalculate column 'sizes'
+tbl_survey_clean <- tbl_survey_clean %>% 
+  mutate(sizes=case_when(
+    number_of_employees<=10 ~ "Small (0 to 10)",
+    number_of_employees<=20 ~ "Medium (11 to 20)",
+    number_of_employees<=100 ~ "Large (21 to 100)",
+    TRUE ~ "Extra large (over 100)"
+  ))
+
+summary_tbl_survey_clean <- tbl_survey_clean %>% 
+  group_by(sizes) %>% 
+  summarize(count_per_size=n()) %>% 
+  ungroup() %>% 
+  arrange(count_per_size)
+
+# Reorder the data according to count_per_size (set 'levels' in table)
+summary_tbl_survey_clean$sizes <- factor(
+  summary_tbl_survey_clean$sizes, 
+  levels = summary_tbl_survey_clean$sizes[order(
+    summary_tbl_survey_clean$sizes
+    )])
+
+summary_tbl_survey_clean %>% 
+  ggplot(mapping = aes(x = sizes, y = count_per_size)) +
+  geom_bar(aes(fill = sizes), stat="identity", position = "stack") +
+  scale_fill_manual(
+    "Sizes",
+    values = c("Extra large (over 100)"="deepskyblue4",
+               "Large (21 to 100)"="deepskyblue3",
+               "Medium (11 to 20)"="deepskyblue2",
+               "Small (0 to 10)"="deepskyblue"
+               )
+    ) +
+  labs(
+    title = "Universities by size",
+    subtitle = "Showing the number of employees of each university",
+    x = "Size",
+    y = "Number of employees"
+    ) +
+  geom_text(mapping = aes(label = count_per_size),
+    family = "sans",
+    fontface = "bold",
+    size = 5,
+    color = "darkslategray1",
+    nudge_y = -1.2
+    ) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(12,3,3,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,12,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 9, face = "bold",
+      margin = margin(0,6,0,0,"pt"),
+      hjust = 0.5,
+      ),
+    axis.text.y = element_text(
+      size = 9, face = "bold",
+      margin = margin(0,6,0,0,"pt")
+      ),
+    legend.position = "none"
+  )
+
+```
+  
+### Part 3 Findings  
+    
+Large universities seem to be well represented.  
+As for a deeper analysis, I didn't find clues for the reason of this 
+disparity...  
+Extra large universities are very probably fewer than small to middle sized 
+universities.  
+Some hypothesis that middle sized university are more represented than small 
+ones could be that they have bigger financial means to send employees to 
+conferences. But this is an assumption with absolutely nothing to back it up.  
+  
+-------------------------------------------------------------------  
+    
+  
+## Part 4 / Stacked horizontal bar plot  
+  
+For the fourth and last part of this report, I will present a horizontal 
+stacked bar plot showing the role percentage per group.  
+ 
+```{r Graph_p4, message=FALSE, warning=FALSE}
+
+summary_survey_by_group <-tbl_survey_clean %>%
+  mutate(
+    pc_phd=number_of_ph_d_students/number_of_employees,
+    pc_postdocs=number_of_postdocs/number_of_employees,
+    pc_professors=number_of_professors/number_of_employees
+    ) %>% 
+  select(participant_id,starts_with("pc_")) %>%  
+  gather(
+    pc_phd,
+    pc_postdocs,
+    pc_professors,
+    key = "group",
+    value = "percentage"
+    )
+
+summary_survey_by_group %>% 
+  ggplot(mapping = aes(x=participant_id,y=percentage)) +
+  geom_bar(
+    aes(fill=group),
+    stat="identity",
+    position = position_stack(vjust = 0.5),
+    width=0.75
+  ) +
+  scale_x_continuous(breaks=c(0:29))+
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip() +
+# With this 'scale_fill_manual', I set the colors and for aesthetic purposes
+# I invert the labels (with values of course!)
+  scale_fill_manual(
+    "Employee type",
+    limits = c("pc_professors","pc_postdocs","pc_phd"),
+    values = c(
+      "pc_professors"="steelblue3",
+      "pc_postdocs"="chartreuse3",
+      "pc_phd"="tomato1"
+    ),
+    labels = c(
+      "Professors",
+      "Postdocs",
+      "PhD Students"
+    )
+  ) +
+    labs(
+    title = "Employees role percentages for each group",
+    subtitle = str_glue("Different research groups have a very different ",
+                        "distribution of roles  "),
+    x = "Research Group ID",
+    y = "Percentage"
+  ) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(3,3,0,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,12,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 7, face = "bold",
+      margin = margin(3,3,0,0,"pt"),
+      hjust = 0.5,
+    ),
+    axis.text.y = element_text(
+      size = 6, face = "bold.italic",
+      margin = margin(3,6,3,0,"pt"),
+      vjust = 0.5, hjust = 1
+    ),
+    legend.position = "bottom",
+    legend.direction = "horizontal",
+    legend.justification = 0.4,
+    legend.text = element_text(hjust = 0.5, vjust = 0.5),
+    legend.title = element_text(hjust = 0.5, vjust = 0.5),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.y = element_blank()
+  )
+
+```
+  
+### Part 4 Findings 
+
+The composition of the research groups is very heterogeneous.  
+Some groups (11 and 12) don't include any PhD students!  
+  
+    
+-------------------------------------------------------------------  
+   
+This is it for the 2nd report of this final project... See you soon for the 
+third report.  
+**Thank you for your attention!**
+  
+  

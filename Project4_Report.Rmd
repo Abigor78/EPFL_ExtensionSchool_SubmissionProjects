@@ -1,0 +1,901 @@
+---
+title: "Project 4 / Report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    theme: cerulean
+    highlight: zenburn
+  html_notebook: default
+editor_options: 
+  chunk_output_type: inline
+---
+  
+# A rental website
+  
+```{r Init_lib_theme, message=FALSE, warning=FALSE}
+
+# Deactivate messages and warnings from running code, show code chunks
+
+# Start with loading all the necessary libraries
+library(dplyr)
+library(tidyr)
+library(rmarkdown)
+library(ggplot2)
+library(leaflet)
+library(ggmap)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(knitr)
+library(kableExtra)
+library(httr)
+library(scales)
+library(magrittr)
+library(rvest)
+
+# Load personal theme for ggplot2
+myTheme <- function(base_size = 7.5,
+                    base_family = "sans",
+                    base_line_size = base_size / 22,
+                    base_rect_size = base_size / 22){
+  theme_minimal(base_size=base_size,
+                base_family=base_family,
+                base_line_size=base_line_size,
+                base_rect_size=base_rect_size) %+replace%
+  theme(
+  line = element_line(
+    size = base_line_size,
+    linetype = 1,
+    lineend = "round",
+    color = "grey75"
+    ),
+  text = element_text(
+    face = "plain",
+    color = "grey25",
+    family = "sans",
+    size = base_size,
+    hjust = 0,
+    vjust = 0,
+    angle = 0,
+    lineheight = 1,
+    margin= margin(),
+    debug=FALSE
+    ),
+  plot.background = element_rect(
+    fill = "grey98",
+    color = "grey75",
+    size = 1,
+    linetype = 1
+    ),
+  panel.background = element_rect(fill="grey95",color="grey75"),
+  axis.line = element_line(color="grey50", size=0.25),
+  axis.ticks = element_line(color="grey50", size=0.25),
+  axis.text = element_text(face="bold", size = 9),
+  axis.title = element_text(face = "bold", size = 11, hjust = 0.5, vjust = 0),
+  legend.text = element_text(face = "bold"),
+  legend.title = element_text(face = "bold", size = 8),
+  panel.grid.major.x = element_line(color="grey75"),
+  panel.grid.major.y = element_line(color="grey75"),
+  panel.grid.minor = element_line(color="grey90"),
+  plot.margin=unit(c(12,12,12,12), "points"),
+  plot.title = element_text(face = "bold", size = 12),
+  plot.subtitle = element_text(
+    face = "italic",
+    size = 10,
+    margin = margin(3,0,12,0,"pt")
+    ),
+  complete = TRUE
+)
+}
+
+```
+  
+-------------------------------------------------------------------  
+  
+*In this fourth project, we will extract data from a website by scraping it.*
+
+  
+*The internet site is a fake rental agency, set up for this report.*  
+*You can check it out [here](https://epfl-exts.github.io/rental-scrape/).*
+  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 1 / Scrape the website and generate a clean table of data 
+  
+For the first part of this report, the challenge is to scrape all the data 
+from the given website and generate a tibble with it.
+
+So here is the code followed by a table with the result :
+    
+```{r Data_import_prep, message=FALSE, warning=FALSE}
+
+# Import the data from the internet site
+website_html <- read_html("https://epfl-exts.github.io/rental-scrape/")
+
+# Create lists of extracted data 
+location_extract <- website_html %>% 
+  html_nodes(".col-sm .sec-info .address") %>% 
+  html_text() %>% 
+#  str_replace_all("\\\\","") %>% 
+  str_conv("UTF8") 
+
+# Correct unformatted signs (ï)
+location_ <- location_extract %>% 
+  str_replace_all("Ø","") %>% 
+  str_replace_all("√","ï") %>% 
+  str_replace_all("\\\\","")
+
+price_extract <- website_html %>% 
+  html_nodes(".col-sm .bg-text .price .float-right strong") %>% 
+  html_text() %>% 
+  str_replace("Price on request",NA_character_)
+
+currency_extract <- website_html %>% 
+  html_nodes(".col-sm .bg-text .price .float-right") %>% 
+  html_text() %>% 
+  word(-1) %>% 
+  str_replace("NA",NA_character_)
+
+object_type_extract <- website_html %>% 
+  html_nodes(".col-sm .bg-text .object-type") %>% 
+  html_text()
+
+rooms_extract <- website_html %>% 
+  html_nodes(".col-sm .bg-text .rooms") %>% 
+  html_text(trim = TRUE) %>% 
+  str_replace_all("\\s","") %>% 
+  str_extract_all("[:digit:][:digit:]|[:digit:].[:digit:]|[:digit:]") %>%
+  lapply(function(x) if(identical(x, character(0))) NA_character_ else x) %>% 
+  unlist()
+
+living_space_extract <- website_html %>% 
+  html_nodes(".col-sm .sec-info .living-space strong") %>% 
+  html_text() %>% 
+  str_replace(" m2", "") %>% 
+  str_replace("NA",NA_character_)
+
+floor_extract <- website_html %>% 
+  html_nodes(".col-sm .sec-info .floor strong") %>% 
+  html_text() %>% 
+  str_replace("NA",NA_character_)
+
+availability_extract <- website_html %>% 
+  html_nodes(".col-sm .availability strong") %>% 
+  html_text() %>% 
+  str_replace("NA",NA_character_)
+
+usable_surface_extract <- website_html %>% 
+  html_nodes(".col-sm .sec-info .usable-surface strong") %>% 
+  html_text()  %>% 
+  str_replace(" m2", "") %>% 
+  str_replace("NA",NA_character_)
+
+# Create a tibble gathering all the lists
+tbl_rental_offers <- bind_cols(
+  location = location_extract,
+  price = price_extract,
+  currency = currency_extract,
+  object_type = object_type_extract,
+  rooms = rooms_extract,
+  living_space = living_space_extract,
+  floor = floor_extract,
+  availability = availability_extract,
+  usable_surface = usable_surface_extract
+  ) %>% 
+  mutate(
+    price = as.numeric(price),
+    rooms = as.numeric(rooms),
+    floor = as.numeric(floor),
+    living_space = as.numeric(living_space),
+    usable_surface = as.numeric(usable_surface)
+  ) 
+
+
+# And add a table to see the result
+# Generate the table of results
+tbl_rental_offers %>%  
+  arrange(desc(price)) %>%
+  rename(
+    "Address"=location,
+    "Price"=price,
+    "Currency"=currency,
+    "Type of housing"=object_type,
+    "Rooms"=rooms,
+    "Living m2"=living_space,
+    "Floor"=floor,
+    "Availability"=availability,
+    "Usable m2"=usable_surface
+  ) %>%
+  kable(format = "html",escape=F) %>% 
+  kable_styling(
+    bootstrap_options = c("striped", "condensed", "responsive", "bordered"),
+    font_size = 11
+  ) %>% 
+  scroll_box(width = "100%", height = "480px", fixed_thead = TRUE) 
+```
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 2 / Scatter plot showing how prices evolve with living space  
+  
+For the second part of this report, we will draw a scatter plot showing the 
+evolution of price compared to the living space for flats.  
+  
+  
+```{r Graph_p2, message=FALSE, warning=FALSE}
+
+# Set a vector with all the types that match flats, for easy filtering of table
+vec_flat_type <- c("Apartment","Attic flat","Duplex","Loft","Roof flat",
+                   "Studio","Terrace flat")
+
+scatterplot_price_by_space <- tbl_rental_offers %>% 
+  filter(
+    object_type %in% vec_flat_type,
+    price < 20000, !is.na(price),
+    !is.na(living_space)
+  )
+
+scatterplot_price_by_space %>% 
+  ggplot(aes(x = living_space, y = price)) +
+  geom_jitter(color = "steelblue3", alpha = 0.6, size = 2) +
+  scale_x_continuous(labels = label_number(suffix = " m2")) +
+  scale_y_continuous(labels = label_number(suffix = " CHF", big.mark = "'")) +
+  labs(
+    title = "Evolution of price by living space ",
+    subtitle = "Comparing flats under the limit of 20'000 CHF (no houses)",
+    x = "Living space",
+    y = "Price"
+  ) +
+  myTheme() +
+  theme(
+    axis.text.x = element_text(hjust = 0.5),
+    axis.text.y = element_text(vjust = 0.5),
+    axis.title.x = element_text(margin = margin(8,0,0,0,"pt")),
+    axis.title.y = element_text(margin = margin(0,8,0,0,"pt")),
+    legend.position = "none"
+  )
+
+```
+   
+  
+### Part 2 Findings  
+  
+In the "standard" range of living space (up to ~150 m2), the market prices 
+seem to be well defined. There is a tight price range for most of the 
+apartments, although some exceptions are visible.  
+There are many variables to take into account such as location, standing and 
+surrounding facilities in order to justify the prices' differences.  
+Over ~150 m2, the prices seem to be more fluctuating. But surely some variables 
+such as location, standing and number of rooms will have a bigger influence 
+on the price.  
+  
+    
+  
+-------------------------------------------------------------------  
+
+## Part 3 / Bar plot showing the number of properties by postcode  
+  
+For the third part of this report, we will compare the number of properties 
+by postcode to see if the agency is more active in certain areas.  
+  
+  
+```{r Graph_p3, message=FALSE, warning=FALSE}
+
+# Get position of commas in "location" string and extract max value
+comma_pos <- tbl_rental_offers$location %>%   
+  str_locate_all(", ") %>%
+  map(max) %>% 
+  unlist() %>% 
+  as_tibble()
+
+# Extract postal code and city name from "location"
+# Plus set a flag for addresses "on request"
+tbl_rental_offers_with_postcode <- tbl_rental_offers %>% 
+  bind_cols(comma_pos) %>% 
+  filter(str_detect(location,"Ø")==FALSE) %>%
+  mutate(
+    city_code_name = str_sub(
+      location, 
+      start = value,
+      end = str_length(location)
+    )
+  ) %>% 
+  mutate(
+    street = str_sub(
+      location, 
+      start = 0,
+      end = value-2
+    )
+  ) %>% 
+  mutate(
+    postal_code = as.numeric(
+      str_extract_all(
+        city_code_name,
+        "^.{5}"
+      )
+    )
+  ) %>% 
+  mutate(
+    city = str_trim(
+      str_sub(
+        city_code_name,
+        start = 6,
+        end = str_length(city_code_name)
+      )
+    )
+  ) %>% 
+  mutate(
+    onrequest_flag = if_else(
+      str_detect(
+        str_to_lower(location),
+        "address on request"
+      )|str_detect(
+        str_to_lower(location),
+        "sur demande"
+      )|str_sub(location, start = 1, end = 1)=="-",
+      TRUE,
+      FALSE
+    )
+  )
+
+summary_offer_by_postcode <- tbl_rental_offers_with_postcode %>% 
+  group_by(postal_code,city) %>% 
+  summarise(count_of_occ=n()) %>% 
+  filter(count_of_occ>=10) %>% 
+  ungroup()
+
+list_postal_codes <- summary_offer_by_postcode %>% 
+  select(postal_code) %>% 
+  distinct() %>% 
+  unlist()
+
+# Save a table with city name and postal code
+tbl_postal_codes_city <- tbl_rental_offers_with_postcode %>% 
+  select(postal_code,city) %>% 
+  distinct()
+
+summary_offer_by_postcode %>%
+  ggplot(
+    aes(
+      x = as.character(postal_code),
+      y = count_of_occ,
+      fill = factor(count_of_occ)
+    )
+  ) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_discrete(
+    breaks = list_postal_codes,
+    labels = list_postal_codes
+  ) +
+  scale_y_continuous(breaks = seq(0,60,10)) +
+  scale_fill_grey(start = 0.5, end = 0) +
+  geom_text(
+    aes(y = 0, label = city),
+    family = "sans",
+    fontface = "bold",
+    size = 4,
+    color = "deepskyblue1",
+    alpha = 0.75,
+    angle = 90,
+    hjust = 0,
+    nudge_y = 1
+  ) +
+  labs(
+    title = "A look at the number of offers by postcode",
+    subtitle = str_glue("Count of offers by postcode, for the 20 most ",
+                        "represented postcodes"),
+    x = "Postal code",
+    y = "Number of offers"
+  ) +
+  myTheme() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5),
+    axis.text.y = element_text(vjust = 0.5),
+    axis.title.x = element_text(margin = margin(8,0,0,0,"pt")),
+    axis.title.y = element_text(margin = margin(0,8,0,0,"pt")),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    legend.position = "none"
+  )
+
+  
+```
+  
+```{r Findings_p3, message=FALSE, warning=FALSE}
+
+top_locations <- summary_offer_by_postcode %>% 
+  group_by(city) %>% 
+  summarise(sum_offers = sum(count_of_occ)) %>% 
+  mutate(percent_of_total = sum_offers/sum(sum_offers)) %>% 
+  ungroup()
+
+winner_locations <- top_locations %>% 
+  arrange(desc(sum_offers)) %>% 
+  head(1)
+
+```
+
+    
+  
+### Part 3 Findings  
+  
+We can clearly see that this agency is very active in the city center of 
+Geneva.  
+  
+In this top 20 locations by offers, the city center (postcodes from 1201 to 
+1209) represents **`r pull(winner_locations, sum_offers)`** offers out of a 
+total of **`r sum(top_locations$sum_offers)`**, which is 
+**`r round(pull(winner_locations, percent_of_total)*100,2)`%** of this 
+total.  
+    
+  
+-------------------------------------------------------------------  
+
+## Part 4 / `r str_glue("Scatter plot showing how prices evolve with living ",
+                      "space, according to location and floor")`
+  
+For the fourth part of this report, we will draw a scatter plot showing the 
+evolution of price compared to the living space for flats, and comparing it 
+regarding location and floor.  
+  
+  
+```{r Graph_p4, message=FALSE, warning=FALSE}
+
+scatterplot_facets_price_by_space <- tbl_rental_offers_with_postcode %>% 
+  filter(
+    object_type %in% vec_flat_type,
+    price < 20000, !is.na(price),
+    !is.na(living_space),
+    !is.na(floor),
+    floor<=6
+  ) %>% 
+  mutate(floor_name=case_when(
+    floor==1 ~ "1st floor",
+    floor==2 ~ "2nd floor",
+    floor==3 ~ "3rd floor",
+    floor==4 ~ "4th floor",
+    floor==5 ~ "5th floor",
+    floor==6 ~ "6th floor",
+    TRUE ~ "Not defined"
+    )
+  )
+
+count_of_cities <- scatterplot_facets_price_by_space %>% 
+  distinct(city) %>% 
+  summarise(count_of_values=n()) %>% 
+  unlist()
+
+scatterplot_facets_price_by_space %>% 
+  ggplot(aes(x = living_space, y = price, color = postal_code)) +
+  geom_jitter(alpha = 0.8, size = 2) +
+  facet_wrap(vars(floor_name)) +
+  scale_color_gradientn(colors = rainbow(count_of_cities)) +
+  scale_y_continuous(labels = label_number(big.mark = "'")) +
+  labs(
+    title = str_glue("Evolution of price regarding living space, floor ",
+                    "and location"),
+    subtitle = str_glue("Comparing flats under the limit of 20'000 CHF ",
+                        "(no houses) \n", "Separated by floor using facets ",
+                        "and postcodes using dot colors"),
+    x = "Living space in m2",
+    y = "Price in CHF"
+  ) +
+  myTheme() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 0.2, hjust = 0.2, size = 8),
+    axis.text.y = element_text(vjust = 0.5, size = 8),
+    axis.title.x = element_text(margin = margin(8,0,0,0,"pt")),
+    axis.title.y = element_text(margin = margin(0,8,0,0,"pt")),
+    legend.position = "none",
+    strip.text = element_text(
+      face = "bold",
+      size = 9,
+      hjust = 0.5,
+      vjust = 0.5
+    ),
+    strip.background = element_rect(fill="grey85")
+  )
+
+```
+
+```{r Findings_p4, message=FALSE, warning=FALSE}
+
+summary_price_by_floor <- scatterplot_facets_price_by_space %>% 
+  group_by(floor_name) %>% 
+  summarise(mean_price=mean(price)) %>% 
+  ungroup()
+
+summary_floor_postcodes <- scatterplot_facets_price_by_space %>% 
+  group_by(postal_code, floor, floor_name) %>% 
+  summarise(mean_price=mean(price), count_of_offers=n()) %>% 
+  arrange(desc(mean_price)) %>% 
+  mutate(mean_price=as.numeric(round(mean_price, 2))) %>% 
+  ungroup()
+
+most_expensive <- summary_floor_postcodes %>% 
+  head(1)  %>% 
+  left_join(
+    tbl_rental_offers_with_postcode,
+    by = c("postal_code","mean_price"="price","floor")
+  )
+
+cheapest <- summary_floor_postcodes %>% 
+  tail(1) %>% 
+  left_join(
+    tbl_rental_offers_with_postcode,
+    by = c("postal_code","mean_price"="price","floor")
+  )
+  
+```
+  
+  
+### Part 4 Findings  
+  
+For this scatter plot, we had complete data for 
+**`r nrow(scatterplot_facets_price_by_space)`** offers (including price, 
+living space, location and floor).  
+
+Same as in part 2, in the "standard" range of living space (up to ~150 m2), 
+the market prices seem to be well defined. There is a tight price range for 
+most of the apartments, although some exceptions are visible. The floor has 
+a small influence over the price, although it seems that the prices above 
+3rd floor are slightly lower.  
+  
+The most expensive combination "postcode/floor" is : 
+**`r format(pull(most_expensive, mean_price), nsmall=2, big.mark="'")` CHF** 
+on the **`r pull(most_expensive,floor_name)`**.  
+This apartment is a **`r pull(most_expensive, object_type)`** of 
+**`r pull(most_expensive, living_space)` m^2^** and offers 
+**`r pull(most_expensive, rooms)`** rooms.  
+It is located in **`r pull(most_expensive, city)`**.  
+    
+The cheapest combination "postcode/floor" is : 
+**`r format(pull(cheapest, mean_price), nsmall=2, big.mark="'")` CHF** 
+on the **`r pull(cheapest,floor_name)`**.  
+This apartment is a **`r pull(cheapest, object_type)`** of 
+**`r pull(cheapest, living_space)` m^2^** and offers 
+**`r pull(cheapest, rooms)`** rooms.  
+It is located in **`r pull(cheapest, city)`**.  
+
+For the most expensive and cheapest "postcode/floor" combination, there was 
+only one value at the extremes.  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 5 / Comparing offers with "Provided address" vs "Address on request"
+  
+For the fifth part of this report, we will compare the offers that have an 
+address with those whose address is not provided. We will try to determine 
+trends, see if there are obvious reasons for not including the address in 
+the offer...    
+  
+  
+```{r Graph_p5_price, message=FALSE, warning=FALSE}
+
+# Select records where price is available
+boxplot_offers_price <- tbl_rental_offers_with_postcode %>% 
+  group_by(onrequest_flag) %>% 
+  filter(price>0)
+
+summary_offers_by_price <- boxplot_offers_price %>% 
+  group_by(onrequest_flag) %>% 
+  summarise(
+    average_price=mean(price),
+    median_price=median(price)
+  ) %>% 
+  ungroup()
+
+boxplot_offers_price %>% 
+  ggplot(aes(x = onrequest_flag, y = price, fill = onrequest_flag)) +
+  geom_boxplot(alpha = 1, size = 0.5, show.legend = FALSE) +
+  geom_violin(scale = "area", alpha = 0.5, show.legend = FALSE) +
+  scale_x_discrete(
+    labels = c("With address","Address on request")
+  ) +
+  scale_y_continuous(
+    labels = label_number(big.mark = "'")
+  ) +
+  scale_fill_manual(
+    limits = c(
+      "TRUE",
+      "FALSE"
+  ),
+    values = c(
+      "TRUE"="deepskyblue3",
+      "FALSE"="darkslategray3"
+    )
+  ) +
+  labs(
+    title = "Comparing prices between offers with or without address",
+    subtitle = str_glue("The graph represents the distribution of offers ",
+                        "regarding the price by address type"),
+    x = "",
+    y = "Price in CHF"
+  ) +
+  myTheme() +
+  theme(
+    axis.text.x = element_text(hjust = 0.5, margin = margin(6,0,0,0,"pt")),
+    axis.title.y = element_text(margin = margin(0,6,0,0,"pt")),
+    legend.position = "bottom",
+    legend.direction = "horizontal"
+  )
+
+```
+
+```{r Graph_p5_living_space, message=FALSE, warning=FALSE}
+
+# Select records where living space is available
+boxplot_offers_living_space <- tbl_rental_offers_with_postcode %>% 
+  filter(living_space>0)
+
+summary_offers_by_living_space <- boxplot_offers_living_space %>% 
+  group_by(onrequest_flag) %>% 
+  summarise(
+    average_living_space=mean(living_space),
+    median_living_space=median(living_space)
+  ) %>% 
+  ungroup()
+
+boxplot_offers_living_space %>% 
+  ggplot(aes(x = onrequest_flag, y = living_space, fill = onrequest_flag)) +
+  geom_boxplot(alpha = 1, size = 0.5, show.legend = FALSE) +
+  geom_violin(scale = "area", alpha = 0.5, show.legend = FALSE) +
+  scale_x_discrete(
+    labels = c("With address","Address on request")
+  ) +
+  scale_fill_manual(
+    limits = c(
+      "TRUE",
+      "FALSE"
+  ),
+    values = c(
+      "TRUE"="deepskyblue3",
+      "FALSE"="darkslategray3"
+    )
+  ) +
+  labs(
+    title = "Comparing living space between offers with or without address",
+    subtitle = str_glue("The graph represents the distribution of offers ",
+                        "regarding the living space by address type"),
+    x = "",
+    y = "Living surface in m2"
+  ) +
+  myTheme() +
+  theme(
+    axis.text.x = element_text(hjust = 0.5, margin = margin(6,0,0,0,"pt")),
+    axis.title.y = element_text(margin = margin(0,6,0,0,"pt")),
+    legend.position = "bottom",
+    legend.direction = "horizontal"
+  )
+
+```
+  
+  
+  
+```{r Graph_p5_floor, message=FALSE, warning=FALSE}
+
+# Select records where floor is available (limit max 20 floors)
+boxplot_offers_floor <- tbl_rental_offers_with_postcode %>% 
+  filter(floor>0&floor<20)
+
+summary_offers_by_floor <- boxplot_offers_floor %>% 
+  group_by(onrequest_flag) %>% 
+  summarise(
+    average_floor=mean(floor),
+    median_floor=median(floor)
+  ) %>% 
+  ungroup()
+
+boxplot_offers_floor %>% 
+  ggplot(aes(x = onrequest_flag, y = floor, fill = onrequest_flag)) +
+  geom_boxplot(alpha = 1, size = 0.5, show.legend = FALSE) +
+  geom_violin(scale = "area", alpha = 0.5, show.legend = FALSE) +
+  scale_x_discrete(
+    labels = c("With address","Address on request")
+  ) +
+  scale_fill_manual(
+    limits = c(
+      "TRUE",
+      "FALSE"
+  ),
+    values = c(
+      "TRUE"="deepskyblue3",
+      "FALSE"="darkslategray3"
+    )
+  ) +
+  labs(
+    title = "Comparing floor number between offers with or without address",
+    subtitle = str_glue("The graph represents the distribution of offers ",
+                        "regarding the floor number by address type"),
+    x = "",
+    y = "Floor #"
+  ) +
+  myTheme() +
+  theme(
+    axis.text.x = element_text(hjust = 0.5, margin = margin(6,0,0,0,"pt")),
+    axis.title.y = element_text(margin = margin(0,6,0,0,"pt")),
+    legend.position = "bottom",
+    legend.direction = "horizontal"
+  )
+
+```
+   
+```{r Graph_p5_type, message=FALSE, warning=FALSE}
+
+# Create summary table for all types of offers
+plot_offers_type <- tbl_rental_offers_with_postcode %>% 
+  group_by(object_type, onrequest_flag) %>% 
+  summarise(count_of_offers = n())
+
+summary_count_type <- plot_offers_type %>% 
+  summarise(count_of_type = n())
+
+plot_offers_type <- plot_offers_type %>% 
+  left_join(summary_count_type, by = c("object_type")) 
+
+plot_offers_type <- plot_offers_type %>% 
+  filter(count_of_type>1)
+  
+plot_offers_type %>% 
+  ggplot(aes(x = object_type, y = count_of_offers, fill = onrequest_flag)) +
+  geom_col(position = "dodge") +
+  #geom_violin(scale = "area", alpha = 0.5, show.legend = FALSE) +
+  #scale_x_discrete(
+  #  labels = c("With address","Address on request")
+  #) +
+  scale_fill_manual(
+    "Address type",
+    limits = c(
+      "TRUE",
+      "FALSE"
+    ),
+    values = c(
+      "TRUE"="deepskyblue3",
+      "FALSE"="darkslategray3"
+    ),
+    labels = c("Address on request","Address provided")
+  ) +
+  labs(
+    title = "Comparing the number of offers by object type",
+    subtitle = str_glue("The graph represents the distribution of offers ",
+                        "regarding the type of object by address type"),
+    x = "",
+    y = "Count of offers"
+  ) +
+  myTheme() +
+  theme(
+    axis.text.x = element_text(
+      hjust = 1, 
+      vjust = 0.5, 
+      margin = margin(6,0,0,0,"pt"), 
+      angle = 90
+    ),
+    axis.title.y = element_text(margin = margin(0,6,0,0,"pt")),
+    legend.position = "right",
+    legend.direction = "vertical"
+  )
+
+```
+
+  
+### Part 5 Findings  
+  
+Comparing the data for offers with provided address or address on request shows 
+some interesting facts.   
+  
+Here is a table comparing the average values for price, living space and floor:  
+  
+| **Parameter** | **Address provided** | **Address on request** |
+|:--------------|:--------------------:|:----------------------:|
+| **Price** |**`r round(summary_offers_by_price$average_price[1],0)`.-- CHF**|**`r round(summary_offers_by_price$average_price[2],0)`.-- CHF**|
+| **Living space** |**`r round(summary_offers_by_living_space$average_living_space[1],0)` m^2^**|**`r round(summary_offers_by_living_space$average_living_space[2],0)` m^2^**|
+| **Floor** |**`r round(summary_offers_by_floor$average_floor[1],2)`**|**`r round(summary_offers_by_floor$average_floor[2],2)`**|
+  
+  
+There is a clear gap in the price and living space, where offers with an 
+address on request have a much higher price for a larger living space.  
+The "floor" parameter seems not determining when we consider the average and 
+median values. But when looking at the box plot, we can see that there are more 
+offers with address on request on lower floors.  
+  
+Most of the offers providing the address are apartments. On the contrary, most 
+offers with an address on request are single houses.
+  
+We can conclude that there is a higher standing for the offers where the 
+address is not provided.  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 6 / Placing 30 addresses on a map
+  
+For the sixth and last part of this report, we will place 30 provided addresses 
+on the map using the {ggmap} library and the {leaflet} library.  
+  
+  
+```{r Graph_p6, message=FALSE, warning=FALSE}
+
+# Select 30 addresses randomly
+map_plot <- tbl_rental_offers_with_postcode %>% 
+  filter(onrequest_flag==FALSE) %>% 
+  group_by(postal_code) %>% 
+  top_n(1, postal_code) %>% 
+  head(30)
+
+# Create list of API queries
+geo_API_prefix <- "https://geocode.xyz/"
+geo_API_suffix <- "?json=1&auth=410557014888485594403x5956"
+geo_API_addresses <- map_plot %>% 
+  mutate(
+    location=str_replace_all(location,","," "),
+    address_API=str_replace_all(location," ","+"),
+  )  %>% 
+  transmute(
+    address_API=str_glue(
+      "{geo_API_prefix}{address_API}{geo_API_suffix}"
+    )
+  ) %>% 
+  pull()
+
+# Query to API geo service and extract longitude and latitude
+geo_coordinates <- geo_API_addresses %>% 
+  map(GET) %>% 
+  map(content) %>% 
+  map_df(extract, c("longt","latt"))
+
+# Final list with name, address and geo coordinates
+map_plot_complete <- map_plot %>% 
+  bind_cols(geo_coordinates) %>% 
+  mutate(
+    popup_content=str_glue(
+      "{location}<br/><b>{object_type}</br>{price} {currency}</b>"
+    ),
+    longitude=as.numeric(longt),
+    latitude=as.numeric(latt)
+  ) %>% 
+  select(
+    location, street, postal_code, city, longitude, latitude, popup_content,
+    object_type, price, currency, rooms, living_space, floor, availability
+  )
+
+map_area <- c(left=5.743817, bottom=46.051091, right=6.507367, top=46.378927)
+map_base <- get_stamenmap(
+  bbox = map_area,
+  zoom = 10,
+  maptype = "terrain"
+)
+
+ggmap(map_base) +
+  geom_point(data=map_plot_complete,
+             aes(x=longitude, y=latitude),alpha=0.8, color = "red", size = 4) +
+  labs(title="Where are the offers of this agency located?",
+       subtitle="Geo-location of 30 randomly selected offers")
+
+```
+  
+  
+```{r Graph_p6_bis, message=FALSE, warning=FALSE}
+
+map_plot_complete %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addMarkers(
+    lng = ~longitude,
+    lat = ~latitude,
+    popup = ~popup_content,
+    label = ~location
+  )
+
+```
+  
+  

@@ -1,0 +1,700 @@
+---
+title: "Project 1 / Report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    theme: cerulean
+    highlight: zenburn
+  html_notebook: default
+editor_options: 
+  chunk_output_type: inline
+---
+  
+# A minimal survey 
+  
+```{r Init_lib_theme, message=FALSE, warning=FALSE}
+
+# Deactivate messages and warnings from running code, show code chunks
+
+# Start with loading all the necessary libraries
+library(readr)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(rmarkdown)
+library(ggplot2)
+library(scales)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(knitr)
+library(kableExtra)
+
+# Load personal theme for ggplot2
+myTheme <- function(base_size = 7.5,
+                    base_family = "sans",
+                    base_line_size = base_size / 22,
+                    base_rect_size = base_size / 22){
+  theme_minimal(base_size=base_size,
+                base_family=base_family,
+                base_line_size=base_line_size,
+                base_rect_size=base_rect_size) %+replace%
+  theme(
+  line = element_line(
+    size = base_line_size,
+    linetype = 1,
+    lineend = "round",
+    color = "grey75"
+    ),
+  text = element_text(
+    face = "plain",
+    color = "grey25",
+    family = "sans",
+    size = base_size,
+    hjust = 0,
+    vjust = 0,
+    angle = 0,
+    lineheight = 1,
+    margin= margin(),
+    debug=FALSE
+    ),
+  plot.background = element_rect(
+    fill = "grey98",
+    color = "grey75",
+    size = 1,
+    linetype = 1
+    ),
+  panel.background = element_rect(fill="grey95",color="grey75"),
+  axis.line = element_line(color="grey50", size=0.25),
+  axis.ticks = element_line(color="grey50", size=0.25),
+  axis.text.x = element_text(face="bold"),
+  axis.title = element_text(face = "bold", size = 9, hjust = 0.5, vjust = 0.5),
+  legend.text = element_text(face = "bold"),
+  legend.title = element_text(face = "bold", size = 8),
+  panel.grid.major.x = element_blank(),
+  panel.grid.major.y = element_line(color="grey75"),
+  panel.grid.minor = element_blank(),
+  plot.margin=unit(c(12,12,12,12), "points"),
+  plot.title = element_text(face = "bold", size = 12),
+  plot.subtitle = element_text(
+    face = "italic",
+    size = 10,
+    margin = margin(3,3,3,3,"pt")
+    ),
+  complete = TRUE
+)
+}
+
+```
+  
+  
+-------------------------------------------------------------------  
+  
+*Two groups (one of students and one of professors) have been asked a set of* 
+*32 questions.*  
+*2 CSV files are given, both containing the data from a *
+*[Likert test](https://en.wikipedia.org/wiki/Likert_scale).*  
+  
+```{r Data_import_prep, message=FALSE, warning=FALSE}
+
+### Chunk of code to prepare the data in tables
+
+# Import the data (orinigal CSV files previously copied in the project folder)
+tbl_students_raw <- read_csv("students.csv")
+tbl_professors_raw <- read_csv("professors.csv")
+
+# Clean the data of the 2 imports (rename unnamed columns, clean names)
+# Add a column 'total_answers' to count the sum of all answers per row
+# Add a column 'percent' to get the percentage of answers per question
+# Add a column 'group' to identify the origin of the answers
+# Order the columns
+tbl_students_clean <- tbl_students_raw %>% 
+  rename(question_id =X1) %>% 
+  clean_names()  %>% 
+  mutate(
+    group="Student",
+    total_answers=totally_disagree+disagree+agree+totally_agree
+    ) %>% 
+  mutate(
+    percent=total_answers/max(total_answers)
+  ) %>% 
+  select(question_id,group,everything())
+tbl_professors_clean <- tbl_professors_raw %>% 
+  rename(question_id =X1) %>% 
+  clean_names() %>%
+  mutate(
+    group="Professor",
+    total_answers=totally_disagree+disagree+agree+totally_agree
+    ) %>% 
+  mutate(
+    percent=total_answers/max(total_answers)
+  ) %>% 
+  select(question_id,group,everything())
+
+# Regroup the data in one table to create the total values
+tbl_total_answers <- bind_cols(tbl_students_clean,tbl_professors_clean)
+# Calculate the total values and add label 'Total' in column 'group'
+tbl_total_answers <- tbl_total_answers %>% 
+  mutate(
+    group="Total",
+    totally_disagree=totally_disagree+totally_disagree1,
+    disagree=disagree+disagree1,
+    agree=agree+agree1,
+    totally_agree=totally_agree+totally_agree1,
+    total_answers=total_answers+total_answers1
+  ) %>%  
+  mutate(
+    percent=total_answers/max(total_answers)
+  ) %>% 
+# Keep only columns related to total values (duplicates of columns end with '1')
+ select(-ends_with("1"))
+
+# Create a 'summary' table, listing all the answers by group
+tbl_summary_answers <- bind_rows(
+  tbl_students_clean,
+  tbl_professors_clean,
+  tbl_total_answers
+  )
+
+# Create a value with total number of questions
+questions_count <- tbl_total_answers %>% 
+  count() %>%
+  as.numeric()
+
+### With this chunk of code, I have almose all of the data ready
+### Some calculations will be done bit by bit, according to the question
+
+```
+  
+  
+-------------------------------------------------------------------  
+  
+## Part 1 / Answer 3 questions  
+  
+In the first part of this report, I will try to answer these 3 questions :  
+  
+*1.*  What is the total number of answers obtained from students?  
+*2.*  What is the total number of answers obtained from professors?  
+*3.*  Do each question have the same number of answers?  
+  
+  
+--------------------------------------------------------------------  
+  
+```{r Var_p1.1, message=FALSE, warning=FALSE}
+
+# Chunk of code for 1st question, concerning students
+
+# Count the number of students and the total of all answers from students
+students_count <- tbl_summary_answers %>%
+  filter(group=="Student") %>% 
+  summarise(max(total_answers)) %>% 
+  pull()
+
+# Add up all the answers of students
+students_total_answers <- tbl_summary_answers %>%
+  filter(group=="Student") %>% 
+  summarise(sum(total_answers)) %>% 
+  pull()
+
+# Calculate the average response rate for all questions
+avg_students_total_answers <- tbl_students_clean %>% 
+  summarise(avg_students_total_answers=mean(total_answers)) %>% 
+  pull() %>% 
+  round(2)
+
+# Calculate the average response percentage for all questions
+avg_pc_students_total_answers <- avg_students_total_answers/students_count
+
+```
+  
+### *1.* What is the total number of answers obtained from students?  
+  
+We have a total of **`r students_count`** students that have (mostly) answered 
+**`r questions_count`** questions each.  
+The total number of answers obtained from students is : 
+**`r students_total_answers`**  
+  
+The average number of answers per question is : 
+**`r avg_students_total_answers`** which represents a response rate of 
+**`r round(avg_pc_students_total_answers*100,2)`%**.  
+  
+  
+  
+--------------------------------------------------------------------  
+  
+```{r Var_p1.2, message=FALSE, warning=FALSE}
+
+# Chunk of code for 2nd question, concerning professors
+
+# Count the number of professors and the total of all answers from professors
+professors_count <- tbl_summary_answers %>% 
+  filter(group=="Professor") %>% 
+  summarise(max(total_answers)) %>% 
+  pull()
+
+# Add up all the answers of professors
+professors_total_answers <- tbl_summary_answers %>% 
+  filter(group=="Professor") %>% 
+  summarise(sum(total_answers)) %>% 
+  pull()
+
+# Calculate the average response rate for all questions
+avg_professors_total_answers <- tbl_professors_clean %>% 
+  summarise(avg_professors_total_answers=mean(total_answers)) %>% 
+  pull() %>% 
+  round(2)
+
+# Calculate the average response percentage for all questions
+avg_pc_professors_total_answers <- avg_professors_total_answers/professors_count
+
+```
+  
+### *2.* What is the total number of answers obtained from professors?  
+  
+We have a total of **`r professors_count`** professors that have (mostly) 
+answered **`r questions_count`** questions each.  
+The total number of answers obtained from professors is : 
+**`r professors_total_answers`**  
+  
+The average number of answers per question is : 
+**`r avg_professors_total_answers`** which represents a response rate of 
+**`r round(avg_pc_professors_total_answers*100,2)`%**.
+  
+  
+  
+--------------------------------------------------------------------  
+  
+```{r Var_p1.3, message=FALSE, warning=FALSE}
+
+# Chunk of code for 3rd question, concerning the questions
+
+# Count the number of questions with 100% answers for students
+students_100pc_answers <- tbl_summary_answers %>% 
+  filter(
+    group=="Student",
+    as.numeric(total_answers)==students_count
+    ) %>% 
+  summarise(n()) %>% 
+  pull() %>% 
+  as.numeric()
+
+# Count the number of questions with 100% answers for professors
+professors_100pc_answers <- tbl_summary_answers %>% 
+  filter(
+    group=="Professor",
+    as.numeric(total_answers)==professors_count
+    ) %>% 
+  summarise(n()) %>% 
+  pull() %>% 
+  as.numeric()
+  
+# Count the number of questions with 100% answers for all
+all_100pc_answers <- tbl_summary_answers %>% 
+  filter(
+    group=="Total",
+    as.numeric(total_answers)==professors_count+students_count
+    ) %>% 
+  summarise(n()) %>% 
+  pull() %>% 
+  as.numeric()
+
+all_not100pc_answers <- questions_count-all_100pc_answers 
+
+# Vector with question number (question_id + 1), 100% answer rate
+vec_questions_100pc_total <- tbl_summary_answers %>% 
+  filter(group=="Total",percent==1) %>% 
+  transmute(question_id=question_id+1) %>% 
+  unlist()
+
+# Vector with question number (question_id + 1), >95% and <100% answer rate
+vec_questions_not100pc_total <- tbl_summary_answers %>% 
+  filter(group=="Total",percent<1) %>% 
+  transmute(question_id=question_id+1) %>% 
+  unlist()
+
+```
+  
+### *3.* Do each question have the same number of answers?  
+  
+Out of the **`r questions_count`** questions:  
+  
+**`r round((all_100pc_answers/questions_count*100),0)`%** or 
+**`r all_100pc_answers`** questions were answered by all respondents :  
+Questions : `r vec_questions_100pc_total`  
+  
+**`r round((all_not100pc_answers/questions_count*100),0)`%** or
+**`r all_not100pc_answers`** questions were only partially answered by 
+respondents  
+Questions : `r vec_questions_not100pc_total`  
+  
+```{r Graph_p1.3, message=FALSE, warning=FALSE}
+
+# Chunk of code to generate plot with the values for answers under
+# 100% of response rate
+
+ggplot(
+  data = filter(
+    tbl_summary_answers,
+    group=="Professor"|group=="Student",
+    question_id > 24),
+  mapping = aes(x=question_id+1,y=percent),
+  fill=group
+  ) +
+  geom_col(mapping=aes(fill=group), position="dodge", width=0.8) +
+  scale_x_discrete(breaks=waiver(), limits=c(26:32))+
+  scale_y_continuous(labels=scales::percent_format(accuracy = 1)) +
+  scale_fill_manual(
+    "Group", 
+    values = c("Professor"="deepskyblue3","Student"="darkslategray3"),
+    labels = c(
+      str_glue("Professors (",professors_count,")"),
+      str_glue("Students (",students_count,")")
+      )
+    ) +
+  coord_cartesian(ylim=c(0.8,1)) +
+  labs(title=str_glue("For the ",all_not100pc_answers,
+                      " partially answered questions:"),
+     subtitle = str_glue("Let's check the percentage (bar)",
+      " and number of answers (label) per group"),
+     x="Question number",
+     y="Percentage") +
+  geom_text(data = filter(tbl_summary_answers,
+                          group=="Professor",
+                          question_id > 24
+                          ),
+    mapping = aes(label = total_answers),
+    family = "sans",
+    fontface = "bold",
+    size = 2.5,
+    color = "darkslategray1",
+    nudge_x = -0.2,
+    nudge_y = -0.0075
+    ) +
+  geom_text(data = filter(tbl_summary_answers,
+                          group=="Student",
+                          question_id > 24
+                          ),
+    mapping = aes(label = total_answers),
+    family = "sans",
+    fontface = "bold",
+    size = 2.5,
+    color = "deepskyblue4",
+    nudge_x = 0.2,
+    nudge_y = -0.0075
+    ) +
+  myTheme() +
+  theme(
+    aspect.ratio = 2/3,
+    axis.text.x = element_text(
+      size = 8, 
+      face = "bold.italic",
+      margin = margin(3,0,0,0,unit = "pt")
+    ),
+    axis.title.x = element_text(margin = margin(6,0,0,0,unit = "pt")),
+    axis.title.y = element_text(margin = margin(0,6,0,0,unit = "pt")),
+    plot.subtitle = element_text(margin = margin(3,0,12,0,unit = "pt"))
+    )
+
+```
+```{r End_p1, message=FALSE, warning=FALSE}
+
+# Chunk of code for the findings of Part 1
+
+pc_difference <- avg_pc_professors_total_answers-avg_pc_students_total_answers
+pc_difference <- abs(round(pc_difference*100,2))
+
+pc_diff_comment <- case_when(
+  pc_difference<=1 ~"nearly a tie!",
+  pc_difference<=3 ~"very close.",
+  pc_difference<=5 ~"visible.",
+  pc_difference<=20 ~"important...",
+  TRUE ~"huge!")                     
+pc_diff_comment1 <- case_when(
+  pc_difference<=3 ~"this survey was well adapated to the selected groups of
+  participants.",
+  pc_difference<=5 ~"one group had less interest in answering these questions.",
+  pc_difference<=20 ~"one group was definitely not the right choice for this
+  survey",
+  TRUE ~"important.")
+
+avg_pc_total_answers <- mean(
+  avg_pc_professors_total_answers,
+  avg_pc_students_total_answers)
+avg_pc_total_answers <- abs(round(avg_pc_total_answers*100,5))
+
+avg_pc_comment <- case_when(
+  avg_pc_total_answers>=99 ~"very satisfying, it's a success and represents 
+  highly valuable data!",
+  avg_pc_total_answers>=97 ~"satisfying, we can use this valuable data.",
+  avg_pc_total_answers>=95 ~"ok, we can use this data.",
+  avg_pc_total_answers>=80 ~"disappointing, the data is not really reliable.",
+  TRUE ~"unsatisfying as the data is not reliable.")
+
+```
+  
+### Part 1 Findings  
+  
+The difference in answer rate between professors and students is 
+**`r pc_diff_comment`**  
+The difference overall is of 
+**`r pc_difference`%**, which indicates that **`r pc_diff_comment1`** 
+  
+The result of this survey is `r avg_pc_comment`  
+The global response rate is **`r round(avg_pc_total_answers,2)`%**.  
+  
+    
+  
+-------------------------------------------------------------------  
+  
+  
+## Part 2 / Side-by-side bar chart
+  
+For the second part of this report, here is a side-by-side bar chart
+comparing the distribution of answers of the students versus the professors
+for each question.  
+  
+```{r Graph_p2, message=FALSE, warning=FALSE}
+
+# Chunk of code to generate side-by-side bar chart 
+# Necessary libraries have been already loaded
+
+# Prepare a summary by type of answer for the side-by-side bar chart
+summary_for_facet_plot <- tbl_summary_answers %>% 
+  filter(group=="Student"|group=="Professor") %>% 
+  select(-total_answers,-percent) %>% 
+  gather("totally_disagree","disagree","agree","totally_agree",
+         key = "type_of_response", value = "count_of_response")
+
+summary_for_facet_plot %>%
+  ggplot(mapping = aes(x = type_of_response, y = count_of_response)) +
+  geom_bar(mapping= aes(fill=group), stat="identity", position="dodge") +
+  facet_wrap(vars(question_id+1),ncol = 6) +
+  scale_x_discrete(
+    breaks=waiver(),
+    limits=c("totally_agree", "agree","disagree","totally_disagree"),
+    labels=c("Totally Agree","Agree","Disagree","Totally Disagree")
+    )+
+  scale_fill_manual("Respondent",
+    values = c("Professor"="deepskyblue3","Student"="darkslategray3"),
+    labels = c("Professors","Students")
+    ) +
+  labs(title="Number of answers per question, Students versus Professors",
+   subtitle = str_glue("For each question, we can see the distribution ",
+    "of answers per group"),
+   x="Type of answer",
+   y="Number of answers") +
+  myTheme() +
+  theme(
+    axis.text.x = element_text(
+      angle = 90, hjust = 1, vjust = 0.2,
+      face = "bold", size = 6,
+      margin = margin(3,0,0,0,unit = "pt")
+      ),
+    axis.text.y = element_text(size = 6),
+    legend.position = c(0.89,-0.18),
+    strip.text.x = element_text(face = "bold.italic", size = 7, hjust= 0.5)
+    )
+
+```
+  
+  
+### Part 2 Findings  
+  
+It seems that globally, professors and students agree to the same questions, 
+with more disparity by the students. We will dive deeper into this in the 
+third and last part of this report.  
+  
+  
+-------------------------------------------------------------------  
+    
+  
+## Part 3 / What is the general tendency for each question
+  
+For the third part of this report, we calculate the mode (most occuring answer) 
+for each question and separated by group. This should allow us to see a central 
+tendency and find if professors and students are globally answering the same.  
+  
+On the same side-by-side bar chart, but only showing the top answers, we can
+visually see what questions oppose or gather professors and students considering
+a general tendency.  
+For example, the professors and the students are totally opposed on questions #
+16 and #17 (tendency...). On the other hand, the first 15 questions had the
+same answer as top score for both groups.  
+  
+```{r Graph_p3, message=FALSE, warning=FALSE}
+
+# Chunk of code to have a complete table of values showing the mode of each
+# question by group, plus the difference of answers between the groups
+
+tbl_color_palette <- tibble(
+  x=0:3,
+  y=c("limegreen","palegreen","orange","orangered")
+)
+
+# Create a table with the top 1 answer by group and by question
+tbl_top_answers <- summary_for_facet_plot %>% 
+  group_by(question_id,group) %>% 
+  arrange(desc(count_of_response)) %>% 
+  top_n(1,count_of_response) %>% 
+  ungroup() %>% 
+  arrange(question_id) %>% 
+# Add a column to give a numeric value to the type of answer
+  mutate(answer_value=case_when(
+    type_of_response=="totally_agree"~4,
+    type_of_response=="agree"~3,
+    type_of_response=="disagree"~2,
+    type_of_response=="totally_disagree"~1,
+  ))
+# Spread the newly created table to calculate the 'weight' of each answer
+# --> Numeric difference between professors' and students' types of answer
+tbl_top_answers_diff <- tbl_top_answers %>%  
+  select(question_id,answer_value,group) %>% 
+  spread(key = group,value=answer_value) %>% 
+  mutate(answer_weight=abs(Professor-Student))
+
+# Spread again to create table with the top value
+tbl_top_answers_count <- tbl_top_answers %>%  
+  select(question_id,count_of_response,group) %>% 
+  spread(key = group,value=count_of_response)
+
+# Spread the newly created table to calculate the type of answer of each group
+tbl_top_answers_type_of_response <- tbl_top_answers %>%  
+  select(question_id,type_of_response,group) %>% 
+  spread(key = group,value=type_of_response) %>%
+  map(str_to_title,locale="en") %>% 
+  map(str_replace,"_"," ") %>%
+  as_tibble() %>% 
+  mutate(question_id=as.integer(question_id)) %>% 
+  left_join(tbl_top_answers_diff, by="question_id") %>% 
+  left_join(tbl_top_answers_count, by="question_id") %>% 
+  mutate(question_id=question_id+1)
+
+# Regroup the top answers by group and by question with the 'weight'
+tbl_top_answers <- tbl_top_answers %>%
+  left_join(tbl_top_answers_diff, by="question_id") %>% 
+  select(question_id,
+         group,
+         type_of_response,
+         count_of_response,
+         answer_value,
+         answer_weight
+         )
+
+tbl_top_answers %>%
+  ggplot(mapping = aes(x = type_of_response, y = count_of_response)) + 
+### Layer geom_rect as a test, but it is visually confusing... Not implemented
+#  add 'color=as.factor(answer_weight)' in ggplot(aes())
+#  and unmark scale_color_manual
+#  geom_rect(mapping=aes(
+#    color=as.factor(answer_weight),xmin=0,xmax=5,ymin=0,ymax=150),
+#    alpha=0,show.legend = FALSE,
+#    linetype="solid",size=0.5) +
+    geom_bar(mapping= aes(fill=group), stat="identity", position="dodge") +
+  facet_wrap(vars(question_id+1),ncol = 6) +
+  scale_fill_manual("Respondent",
+    values = c("Professor"="deepskyblue3","Student"="darkslategray3"),
+    labels = c("Professors","Students")
+    ) +  
+  scale_x_discrete(
+    breaks=waiver(),
+    limits=c("totally_agree", "agree","disagree","totally_disagree"),
+    labels=c("Totally Agree","Agree","Disagree","Totally Disagree"),
+    ) +
+#  scale_color_manual(
+#    breaks=NULL,
+#    labels=NULL,
+#    values=c("0"="limegreen","1"="palegreen","2"="orange","3"="orangered")
+#  ) +
+  labs(title="Top answer per question, Students versus Professors",
+   subtitle = str_glue("For each question, which answer gathered ",
+    "the most votes per group"),
+   x="Type of answer",
+   y="Number of answers") +
+  myTheme() +
+  theme(
+    axis.text.x = element_text(
+      angle = 90, hjust = 1, vjust = 0.2,
+      face = "bold", size = 6,
+      margin = margin(3,0,0,0,unit = "pt")
+      ),
+    axis.text.y = element_text(size = 6),
+    legend.position = c(0.89,-0.18),
+    strip.text.x = element_text(face = "bold.italic", size = 7, hjust= 0.5)
+    )
+
+```
+  
+Let's take a look at the top answer per question and per group. I also added a
+color indicator ("Comp") to quickly spot the difference -if any- between our
+two groups.  
+  
+  
+```{r Tbl_p3, message=FALSE, warning=FALSE}
+
+# Chunk of code to generate table of answers comparison by group for each
+# question
+
+tbl_top_answers_type_of_response %>% 
+  # Add cell_spec to determine (visual) properties
+  mutate(
+    question_id=cell_spec(question_id, "html", align = "justify"),
+    Professor=cell_spec(Professor, "html", align = "justify"),
+    Student=cell_spec(Student, "html", align = "justify"),
+    answer_weight=cell_spec(answer_weight, "html",
+          align = "justify",
+          background = factor(answer_weight, tbl_color_palette$x,
+                        tbl_color_palette$y),
+          color = factor(answer_weight, tbl_color_palette$x, 
+                        tbl_color_palette$y)
+          )
+  ) %>% 
+  select(question_id,answer_weight,Professor.x,Professor,Student.x,Student) %>% 
+  rename(
+    "#"=question_id,
+    "Comp"=answer_weight,
+    "Top Answer"=Professor.x,
+    "Count"=Professor,
+    "Top Answer"=Student.x,
+    "Count"=Student) %>%
+  kable(format = "html",escape=F) %>% 
+  kable_styling(bootstrap_options = c("striped", "condensed", "responsive"),
+                font_size = 11) %>% 
+  column_spec(column = 1, width = "1cm", bold = T, border_left = T) %>% 
+  column_spec(column = 2, width = "1cm", bold = T) %>% 
+  column_spec(column = 3, width = "4cm", bold = F, border_left = T) %>% 
+  column_spec(column = 4, width = "1.5cm", bold = F) %>% 
+  column_spec(column = 5, width = "4cm", bold = F, border_left = T) %>% 
+  column_spec(column = 6, width = "1.5cm", bold = F, border_right = T) %>% 
+  add_header_above(c("Question"=2,"Professors"=2,"Students"=2))
+
+```
+  
+  
+
+```{r End_p3, message=FALSE, warning=FALSE}
+
+# Chunk of code for the findings of part 3
+
+tbl_count_answer_weights <- tbl_top_answers %>%
+  filter(group=="Student") %>% 
+  group_by(answer_weight) %>% 
+  summarise(count_answer_weight=n()) %>% 
+  ungroup() %>% 
+  mutate(pc_of_total=round(count_answer_weight/32*100,2))
+
+vec_pc_of_total = tbl_count_answer_weights %>% 
+  pull(3)
+vec_count_of_answer_weights <- tbl_count_answer_weights %>% 
+  pull(2)
+
+```
+  
+### Part 3 Findings  
+  
+Globally speaking, the professors and the students share the same view on :  
+**`r vec_count_of_answer_weights[1]`** questions (**`r vec_pc_of_total[1]`%**)  
+They are totally opposed on only :  
+**`r vec_count_of_answer_weights[4]`** questions (**`r vec_pc_of_total[4]`%**)  
+  

@@ -1,0 +1,831 @@
+---
+title: "Project 6 / Report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    theme: cerulean
+    highlight: zenburn
+  html_notebook: default
+editor_options: 
+  chunk_output_type: inline
+---
+  
+# A record of Olympics medals
+
+```{r Init_lib_theme, message=FALSE, warning=FALSE}
+
+# Deactivate messages and warnings from running code, show code chunks
+
+# Start with loading all the necessary libraries
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(knitr)
+library(kableExtra)
+library(scales)
+library(ggrepel)
+
+# Load personal theme for ggplot2
+myTheme <- function(base_size = 7.5,
+                    base_family = "sans",
+                    base_line_size = base_size / 22,
+                    base_rect_size = base_size / 22){
+  theme_minimal(base_size=base_size,
+                base_family=base_family,
+                base_line_size=base_line_size,
+                base_rect_size=base_rect_size) %+replace%
+  theme(
+  line = element_line(
+    size = base_line_size,
+    linetype = 1,
+    lineend = "round",
+    color = "grey75"
+    ),
+  text = element_text(
+    face = "plain",
+    color = "grey25",
+    family = "sans",
+    size = base_size,
+    hjust = 0,
+    vjust = 0,
+    angle = 0,
+    lineheight = 1,
+    margin= margin(),
+    debug=FALSE
+    ),
+  plot.background = element_rect(
+    fill = "grey98",
+    color = "grey75",
+    size = 1,
+    linetype = 1
+    ),
+  panel.background = element_rect(fill="grey95",color="grey75"),
+  axis.line = element_line(color="grey50", size=0.25),
+  axis.ticks = element_line(color="grey50", size=0.25),
+  axis.text = element_text(face="bold", size = 9),
+  axis.title = element_text(face = "bold", size = 11, hjust = 0.5, vjust = 0),
+  legend.text = element_text(face = "bold"),
+  legend.title = element_text(face = "bold", size = 8),
+  panel.grid.major.x = element_line(color="grey75", size=0.5),
+  panel.grid.major.y = element_line(color="grey75", size=0.5),
+  panel.grid.minor = element_line(color="grey90", size=0.25),
+  plot.margin=unit(c(12,12,12,12), "points"),
+  plot.title = element_text(face = "bold", size = 12),
+  plot.subtitle = element_text(
+    face = "italic",
+    size = 10,
+    margin = margin(3,0,12,0,"pt")
+    ),
+  complete = TRUE
+)
+}
+
+```
+  
+```{r Data_import_prep, message=FALSE, warning=FALSE}
+
+# Import all raw data from excel file
+
+athletes <- read_excel("olympics.xlsx", sheet = "athletes") %>% 
+  clean_names()
+
+country <- read_excel("olympics.xlsx", sheet = "country") %>% 
+  clean_names()
+
+games <- read_excel("olympics.xlsx", sheet = "games") %>% 
+  clean_names()
+
+medals <- read_excel("olympics.xlsx", sheet = "medals") %>% 
+  clean_names()
+
+```
+  
+-------------------------------------------------------------------  
+  
+*In this sixth project, we will explore a dataset that contains data about* 
+*athletes at the Olympic Games.*  
+  
+*The titles in the different parts of this report are the questions asked, *
+*the content of the parts being the answers.*
+  
+  
+-------------------------------------------------------------------  
+
+## Part 1 / Have some athletes competed for different countries over time? 
+  
+  
+  
+```{r Data_prep_p1, message=FALSE, warning=FALSE}
+
+# Count the number of athlete_id that have more than one country
+country_by_athlete_occurrences <- country %>% 
+  select(athlete_id, noc) %>%
+  distinct() %>% 
+  group_by(athlete_id) %>% 
+  mutate(occurrences = n()) %>% 
+  filter(occurrences>1) %>% 
+  ungroup()
+
+# Join with the names of these athletes
+athletes_for_multiple_countries <- country_by_athlete_occurrences %>% 
+  left_join(athletes, by = c("athlete_id"="id"))
+
+# How many athletes have competed for >1 country
+count_athletes_for_multiple_countries <- athletes_for_multiple_countries %>% 
+  select(name) %>% 
+  distinct() %>% 
+  count() %>% 
+  pull()
+
+# What is the maximum number of countries encountered
+max_athletes_for_multiple_countries <- athletes_for_multiple_countries %>% 
+  summarise(max_count = max(occurrences)) %>% 
+  pull()
+  
+# How many athletes have competed for 'max_value' countries per athlete
+count_max_athletes_for_multiple_countries <- athletes_for_multiple_countries %>% 
+  filter(occurrences==max_athletes_for_multiple_countries) %>% 
+  select(name) %>% 
+  distinct() %>% 
+  count() %>% 
+  pull()
+
+count_of_countries <- country %>% 
+  select(noc) %>% 
+  distinct() %>% 
+  count() %>% 
+  pull()
+
+count_of_athletes <- athletes %>% 
+  count() %>% 
+  pull()
+
+```
+  
+The answer is **yes**. Some athletes have competed for different countries over 
+time.  
+  
+In a total of **`r count_of_countries`** countries and 
+**`r count_of_athletes`** athletes listed in our dataset, there are 
+**`r count_athletes_for_multiple_countries`** athletes that have competed for 
+different countries.  
+
+There even are **`r count_max_athletes_for_multiple_countries`** athletes that 
+have successively competed for **`r max_athletes_for_multiple_countries`** 
+different countries.  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 2 / Who are the ten athletes that took part in most games?  
+  
+  
+  
+```{r Data_prep_p2, message=FALSE, warning=FALSE}
+
+# Count the number of athlete_id in the list of medals
+athletes_by_games_occurrences <- country %>% 
+  select(athlete_id, games) %>% 
+  distinct() %>% 
+  group_by(athlete_id) %>% 
+  mutate(occurrences = n()) %>% 
+  arrange(desc(occurrences)) %>% 
+  ungroup()
+
+# Filter the top 10 (12) athletes and add name
+athletes_top10_by_games <- athletes_by_games_occurrences %>% 
+  select(athlete_id,occurrences) %>% 
+  distinct() %>% 
+  top_n(10, occurrences) %>% 
+  mutate(occurrences=str_c(occurrences," Olympic games")) %>%
+  left_join(athletes, by = c("athlete_id"="id"))
+
+# Generate a table view of the result
+athletes_top10_by_games %>%  
+  select(occurrences, name, sex) %>% 
+  rename(
+    "Participated to"=occurrences,
+    "Athlete's name"=name,
+    "Gender"=sex
+  ) %>%
+  kable(format = "html",escape=F) %>% 
+  kable_styling(
+    bootstrap_options = c("striped", "condensed", "responsive", "bordered"),
+    font_size = 11
+  )  %>% 
+  column_spec(column = 1, width = "20%", bold = F) %>% 
+  column_spec(column = 2, width = "70%", bold = T) %>% 
+  column_spec(column = 3, width = "10%", bold = F) %>% 
+  collapse_rows(columns = 1, valign = "top")
+
+```
+  
+As there are 9 athletes that equally participated to 8 games, this is in fact 
+a top twelve...  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 3 / What athlete(s) kept a Gold medal for the longest time?  
+  
+  
+ 
+```{r Function_p3+4, message=FALSE, warning=FALSE}
+
+# Create a personal function to calculate and group the sequences of successive 
+# games by a given group
+
+build_sequence_id <- function(my_tibble){
+  group_seq <- vector("integer", nrow(my_tibble))
+
+  for (i in 1:nrow(my_tibble)){
+
+  if (my_tibble$year_diff_valid[i]==0) {
+    group_seq[i] = 1
+    x = 1
+  } else if (my_tibble$year_diff_valid[i]==-4 & 
+             my_tibble$group_id[i-1]==my_tibble$group_id[i]) {
+      group_seq[i] = x
+  } else {
+    x = x+1
+    group_seq[i] = x
+  }  
+  
+  }
+  result <- group_seq %>% 
+    enframe() %>% 
+    select(value) %>% 
+    rename("group_id_seq"="value")
+}
+
+
+```
+
+```{r Data_import_prep_p3, message=FALSE, warning=FALSE}
+
+# Select gold medals and arrange data to group by athlete and by event
+# Add a column "year"
+# Add a column "year_diff" that represents the number of years from previous row
+gold_medals_per_year_and_athlete <- medals %>% 
+  filter(medal=="Gold") %>% 
+  mutate(year=as.numeric(str_sub(games, start = 1, end = 4))) %>% 
+  select(athlete_id, sport, event, medal, year) %>% 
+  arrange(athlete_id, desc(year)) %>% 
+  group_by(athlete_id, event) %>% 
+  mutate(gold_by_event=n()) %>% 
+  arrange(athlete_id, event, desc(year))%>% 
+  arrange(desc(gold_by_event)) %>% 
+  mutate(year_diff=if_else(
+    athlete_id==lag(athlete_id) & event==lag(event), 
+    year-lag(year), 
+    0, missing = 0)
+    )
+
+# As a few intervals between games are not of 4 years (1920, 1948)
+# --> create a "twist" to set all special intervals to 4 years.
+gold_medals_per_year_and_athlete <- gold_medals_per_year_and_athlete %>% 
+  mutate(year_diff_valid=case_when(
+    year_diff==-2 ~ -4,
+    year_diff==-8 & lag(year)==1920 ~ -4,
+    year_diff==-12 & lag(year)==1948 ~ -4,    
+    TRUE ~ year_diff
+    )
+  )
+
+group_index_p3 <- gold_medals_per_year_and_athlete %>% 
+  arrange(athlete_id, sport, event, desc(year)) %>% 
+  group_by(athlete_id, sport, event) %>% 
+  group_indices(athlete_id, sport, event, year) %>% 
+  enframe() %>% 
+  ungroup() %>% 
+  select(value) %>% 
+  rename("group_id"="value")
+
+gold_medals_per_year_and_athlete <- gold_medals_per_year_and_athlete %>% 
+  arrange(athlete_id, sport, event, desc(year)) %>% 
+  bind_cols(group_index_p3) 
+
+gold_medals_per_year_and_athlete_seq <- gold_medals_per_year_and_athlete %>% 
+  build_sequence_id()
+  
+gold_medals_per_year_and_athlete <- gold_medals_per_year_and_athlete %>% 
+  bind_cols(gold_medals_per_year_and_athlete_seq) %>% 
+  group_by(group_id, group_id_seq) %>% 
+  mutate(count_successive_games=n()) %>% 
+  ungroup()
+
+# Generate a list of the top athletes with most successive gold medals for a
+# given event
+result_athletes_succ_gold <- gold_medals_per_year_and_athlete %>% 
+  select(athlete_id, sport, event, count_successive_games, year) %>% 
+  group_by(athlete_id, event) %>% 
+  mutate(max_of_successive_games=max(count_successive_games)) %>% 
+  ungroup() %>% 
+  select(-count_successive_games) %>% 
+  distinct() %>% 
+  arrange(desc(max_of_successive_games)) %>% 
+  filter(max_of_successive_games==max(max_of_successive_games)) %>% 
+  mutate(min_year=min(year)) %>% 
+  mutate(max_year=max(year)) %>% 
+  left_join(athletes, by = c("athlete_id"="id")) %>% 
+  select(
+    sport, event, max_of_successive_games, 
+    min_year, max_year, name, sex) %>% 
+  mutate(sex=if_else(sex=="M", "man", "woman")) %>% 
+  distinct()
+
+```
+  
+The longest time that an athlete kept a Gold medal for a given event is during 
+**`r max(pull(result_athletes_succ_gold, max_of_successive_games))`** successive 
+games. There is only 
+**`r nrow(distinct(result_athletes_succ_gold, athlete_id))`** athlete holding 
+this record. It is a **`r pull(result_athletes_succ_gold, sex)`** 
+and is named **`r pull(result_athletes_succ_gold, name)`**.  
+**`r pull(result_athletes_succ_gold, name)`** started the successful sequence in 
+**`r pull(result_athletes_succ_gold, min_year)`** and this ended in 
+**`r pull(result_athletes_succ_gold, max_year)`**.  
+This was in the **`r pull(result_athletes_succ_gold, sport)`** discipline, 
+specifically in the **`r pull(result_athletes_succ_gold, event)`** event.  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 4 / What country(ies) kept a Gold medal for the longest time?  
+  
+  
+  
+```{r Data_import_prep_p4, message=FALSE, warning=FALSE}
+
+# Select gold medals and arrange data to group by country and by event
+# Add a column "year"
+# Add a column "year_diff" that represents the number of years from previous row
+gold_medals_per_year_and_country <- medals %>% 
+  filter(medal=="Gold") %>% 
+  mutate(year=as.numeric(str_sub(games, start = 1, end = 4))) %>% 
+  select(games, team, sport, event, medal, year) %>% 
+  arrange(team, sport, event, desc(year)) %>% 
+  distinct() %>% 
+  group_by(team, sport, event) %>% 
+  mutate(count_games_by_event=n()) %>% 
+  arrange(team, sport, event, desc(year)) %>%
+  mutate(group_row_index=row_number(team)) %>% 
+  ungroup() %>% 
+  mutate(year_diff=if_else(
+    team==lag(team) & event==lag(event), 
+    year-lag(year), 
+    0, missing = 0)
+    )
+
+# As a few intervals between games are not of 4 years (1920, 1948)
+# --> create a "twist" to set all special intervals to 4 years.
+gold_medals_per_year_and_country <- gold_medals_per_year_and_country %>% 
+  mutate(year_diff_valid=case_when(
+    year_diff==-2 ~ -4,
+    year_diff==-8 & lag(year)==1920 ~ -4,
+    year_diff==-12 & lag(year)==1948 ~ -4,    
+    TRUE ~ year_diff
+    )
+  ) %>% 
+# As there are some games with only 2 years interval, change to 4 years for 
+# simplicity while checking interval
+  mutate(year_diff=if_else(year_diff==-2,-4,year_diff))
+
+group_index_p4 <- gold_medals_per_year_and_country %>% 
+  arrange(team, sport, event, desc(year)) %>% 
+  group_by(team, sport, event) %>% 
+  group_indices(team, sport, event, year) %>% 
+  enframe() %>% 
+  ungroup() %>% 
+  select(value) %>% 
+  rename("group_id"="value")
+
+gold_medals_per_year_and_country <- gold_medals_per_year_and_country %>% 
+  arrange(team, sport, event, desc(year)) %>% 
+  bind_cols(group_index_p4) 
+
+gold_medals_per_year_and_country_seq <- gold_medals_per_year_and_country %>% 
+  build_sequence_id()
+  
+gold_medals_per_year_and_country <- gold_medals_per_year_and_country %>% 
+  bind_cols(gold_medals_per_year_and_country_seq) %>% 
+  group_by(group_id, group_id_seq) %>% 
+  mutate(count_successive_games=n()) %>% 
+  ungroup()
+
+# Generate a list of the top teams with most successive gold medals for a
+# given event
+result_teams_succ_gold <- gold_medals_per_year_and_country %>% 
+  group_by(group_id, group_id_seq) %>% 
+  mutate(min_year=min(year), max_year=max(year)) %>% 
+  ungroup %>% 
+  select(team, sport, event, count_successive_games, min_year, max_year) %>% 
+  group_by(team, event) %>% 
+  mutate(max_of_successive_games=max(count_successive_games)) %>% 
+  ungroup() %>% 
+  filter(
+    max_of_successive_games==max(max_of_successive_games),
+    count_successive_games==max_of_successive_games
+    ) %>% 
+  select(-count_successive_games) %>% 
+  distinct() %>% 
+  arrange(desc(max_of_successive_games)) 
+
+```
+  
+The longest time that a country kept a Gold medal for a given event is during 
+**`r max(pull(result_teams_succ_gold, max_of_successive_games))`** successive 
+games. There is only 
+**`r nrow(distinct(result_teams_succ_gold, team))`** country holding 
+this record: **`r pull(result_teams_succ_gold, team)`**.  
+**`r pull(result_teams_succ_gold, team)`** started the successful sequence in 
+**`r pull(result_teams_succ_gold, min_year)`** and this ended in 
+**`r pull(result_teams_succ_gold, max_year)`**.  
+This was in the **`r pull(result_teams_succ_gold, sport)`** discipline, 
+specifically in the **`r pull(result_teams_succ_gold, event)`** event.    
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 5 / Who are the ten athletes that competed in the most events?  
+  
+  
+  
+```{r Data_prep_p5, message=FALSE, warning=FALSE}
+
+athletes_by_events <- medals %>% 
+  select(athlete_id, sport, event) %>% 
+  distinct() %>% 
+  group_by(athlete_id) %>% 
+  mutate(occurrences=n()) %>% 
+  ungroup()
+
+athletes_top10_by_events <- athletes_by_events %>% 
+  select(athlete_id, occurrences) %>%
+  distinct() %>% 
+  arrange(desc(occurrences)) %>% 
+  top_n(10, occurrences) %>% 
+  left_join(athletes, by = c("athlete_id"="id"))
+
+```
+  
+  
+Here is a table presenting the top **`r nrow(athletes_top10_by_events)`** 
+athletes that have participated to the most events :  
+  
+```{r Data_view_prep_p5, message=FALSE, warning=FALSE}
+
+# Generate a table view of the result
+athletes_top10_by_events %>%
+  select(occurrences, name, sex) %>% 
+  mutate(occurrences=str_c(occurrences, " events")) %>% 
+  rename(
+    "Number of different events"=occurrences,
+    "Name of athlete"=name,
+    "Gender"=sex
+  ) %>%
+  kable(format = "html",escape=F) %>% 
+  kable_styling(
+    bootstrap_options = c("striped", "condensed", "responsive", "bordered"),
+    font_size = 11
+  )  %>% 
+  column_spec(column = 1, width = "25%", bold = F) %>% 
+  column_spec(column = 2, width = "60%", bold = T) %>% 
+  column_spec(column = 3, width = "15%", bold = F)%>% 
+  collapse_rows(columns = 1, valign = "top")
+
+```
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 6 / Table showing the number of medals per country and per year  
+  
+  
+  
+```{r Data_prep_p6, message=FALSE, warning=FALSE}
+
+# Get as variable the minimum count of medals to be in the top 15 countries 
+filter_var_top15_countries <- medals %>% 
+  filter(medal!="NA_character_") %>% 
+  arrange(team) %>% 
+  group_by(team) %>% 
+  mutate(occurrences=n()) %>% 
+  ungroup() %>% 
+  select(team, occurrences) %>% 
+  distinct() %>% 
+  arrange(desc(occurrences)) %>% 
+  top_n(15, occurrences) %>% 
+  summarise(min(occurrences)) %>% 
+  pull()
+  
+# Create table with the top 15 countries including number of medals per year  
+medals_by_country_all_medals <- medals %>% 
+  filter(medal!="NA_character_") %>% 
+  arrange(team) %>% 
+  group_by(team) %>% 
+  mutate(occurrences=n()) %>% 
+  ungroup() %>% 
+  filter(occurrences>=filter_var_top15_countries) %>% 
+  mutate(year=as.numeric(str_sub(games, start = 1, end = 4))) %>% 
+  select(team, year) %>% 
+  arrange(team, desc(year)) %>% 
+  group_by(team, year) %>% 
+  mutate(count_all_medals=n()) %>% 
+  ungroup() %>% 
+  group_by(team) %>% 
+  mutate(total=n()) %>% 
+  ungroup() %>% 
+  distinct()
+
+# Spread the table to have the desired result (rows=countries, columns=years)
+tbl_medals_by_country_all_medals <- medals_by_country_all_medals %>% 
+  spread(year, count_all_medals, fill = 0) %>% 
+  arrange(desc(total)) %>% 
+  select(-total)
+
+```
+  
+Here is a table presenting the top 15 countries with their total number of 
+medals per year (ordered by descending total of medals) :  
+  
+```{r Data_view_prep_p6, message=FALSE, warning=FALSE}
+
+# Generate table for view in browser
+tbl_medals_by_country_all_medals %>% 
+  rename("Country"=team) %>%
+  kable(format = "html",escape=F) %>% 
+  kable_styling(
+    bootstrap_options = c("striped", "condensed", "responsive", "bordered"),
+    font_size = 11
+  )  %>% 
+  column_spec(column = 1, bold = T) %>% 
+  scroll_box(width = "100%") 
+
+```
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 7 / `r str_glue("Scatterplot showing the average height and weight of ",
+                                          "competitors per sport")`  
+  
+  
+  
+```{r Data_prep_p7, message=FALSE, warning=FALSE}
+
+# Eliminate athletes with no weight or height and calculate BMI
+bmi_athletes <- athletes %>% 
+  filter(height!="", weight!="") %>% 
+  mutate(bmi=weight/((height/100)^2))
+
+# Get all athletes for each sport (athletes participating in different sports
+# are counted once for each sport)
+sports_metadata <- bmi_athletes %>% 
+  left_join(medals, by = c("id"="athlete_id")) %>% 
+  select(id, sport, height, weight, bmi) %>% 
+  distinct() 
+
+# Summarise all data and get mean values for height, weight and bmi
+summary_sports_metadata <- sports_metadata %>% 
+  group_by(sport) %>% 
+  summarise_at(.funs = mean, .vars = c("height", "weight", "bmi")) %>% 
+  ungroup()
+
+# Summary for additional informations
+summary_sports_metadata_infos_1 <- summary_sports_metadata %>% 
+  filter(height==max(height)) %>% 
+  mutate(category="Max avg height") %>% 
+  mutate(group="Max")
+summary_sports_metadata_infos_2 <- summary_sports_metadata %>% 
+  filter(height==min(height)) %>% 
+  mutate(category="Min avg height") %>% 
+  mutate(group="Min")
+summary_sports_metadata_infos_3 <- summary_sports_metadata %>% 
+  filter(weight==max(weight)) %>%
+  mutate(category="Max avg weight")  %>% 
+  mutate(group="Max")
+summary_sports_metadata_infos_4 <- summary_sports_metadata %>% 
+  filter(weight==min(weight)) %>% 
+  mutate(category="Min avg weight") %>% 
+  mutate(group="Min")
+summary_sports_metadata_infos_5 <- summary_sports_metadata %>% 
+  filter(bmi==max(bmi)) %>%
+  mutate(category="Max avg BMI")  %>% 
+  mutate(group="Max")
+summary_sports_metadata_infos_6 <- summary_sports_metadata %>% 
+  filter(bmi==min(bmi)) %>% 
+  mutate(category="Min avg BMI") %>% 
+  mutate(group="Min")
+  
+summary_sports_metadata_infos <- bind_rows(
+  summary_sports_metadata_infos_1,
+  summary_sports_metadata_infos_2,
+  summary_sports_metadata_infos_3,
+  summary_sports_metadata_infos_6,
+  summary_sports_metadata_infos_5,
+  summary_sports_metadata_infos_4
+)
+  
+
+```
+
+
+```{r Plot_prep_p7, message=FALSE, warning=FALSE}
+
+# Generate scatterplot 
+summary_sports_metadata %>% 
+  ggplot(aes(x = height, y = weight)) +
+  geom_point(
+    size = 2, 
+    shape = 21, 
+    fill = "deepskyblue3", 
+    color = "deepskyblue3", 
+    alpha = 0.6
+  ) +
+  labs(
+    title = "Average height vs Average weight",
+    subtitle = str_glue("Visualisation of the average height and weight per ",
+      "sport, including informations for min and max values"),
+    x = "Height (in cm)",
+    y = "Weight (in kg)",
+    caption = str_glue(
+      "There are ", 
+      nrow(summary_sports_metadata), 
+      " sports represented in this plot. \nBased on the measurements of ", 
+      number(nrow(sports_metadata), big.mark = "'"),
+      " athletes."
+    )
+  ) +
+  xlim(160, 195) +
+  ylim(35, 105) +
+  # Add layer for additional informations
+  geom_point(
+    data = summary_sports_metadata_infos,
+    mapping = aes(
+      x = height, 
+      y = weight,
+      color = group
+    ),
+    shape = 1,
+    size = 6,
+    stroke = 2,
+    show.legend = FALSE
+  ) +
+  geom_label_repel(
+    summary_sports_metadata_infos,
+    mapping = aes(
+      x = height, 
+      y = weight, 
+      fill = group,
+      label = str_c(sport, "\n", category)
+    ),
+    fontface = "bold",
+    size = 3,
+    show.legend = FALSE,
+    position = position_nudge(x = 0, y = c(8, -8)),
+    direction = "x",
+    point.padding = 0,
+    segment.alpha = 0
+  )  +
+  scale_color_manual(
+    values = c("dodgerblue2","orangered2")
+  )  +
+  scale_fill_manual(
+    values = c("deepskyblue","lightsalmon")
+  ) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,6,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 9, face = "bold",
+      margin = margin(3,6,0,0,"pt"),
+      hjust = 0.5,
+    ),
+    axis.text.y = element_text(
+      size = 9, face = "bold",
+      margin = margin(0,3,0,0,"pt")
+    ),
+    plot.caption = element_text(face = "italic", size = 7)
+  )
+
+```
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 8 / Lineplot showing the number of medals given per year  
+  
+  
+  
+```{r Data_prep_p8, message=FALSE, warning=FALSE}
+
+# Select and prepare the data
+medals_per_year <- medals %>% 
+  filter(medal!="") %>% 
+  select(games, medal) %>% 
+  mutate(year=as.numeric(str_sub(games, start = 1, end = 4))) %>%
+  mutate(games=str_sub(games, start = 6, end = str_length(games))) %>% 
+  arrange(desc(year), medal, games)
+
+summary_medals_per_year <- medals_per_year %>% 
+  group_by(games, year, medal) %>% 
+  summarise(count=n()) %>% 
+  ungroup()
+
+# Get some values for caption in plot
+min_year <- summary_medals_per_year %>% 
+  select(year) %>% 
+  distinct() %>% 
+  filter(year==min(year)) %>% 
+  pull()
+
+max_year <- summary_medals_per_year %>% 
+  select(year) %>% 
+  distinct() %>% 
+  filter(year==max(year)) %>% 
+  pull()
+
+```
+
+
+```{r Plot_prep_p8, message=FALSE, warning=FALSE}
+
+summary_medals_per_year$medal <- fct_relevel(
+  summary_medals_per_year$medal, 
+  levels = c("Gold", "Silver", "Bronze")
+)
+
+# Generate scatterplot 
+summary_medals_per_year %>% 
+  ggplot(aes(x = year, y = count, group = medal)) +
+  geom_line(aes(color = medal),
+    size = 1.5,
+    alpha = 0.7
+  )  +
+  facet_wrap(vars(games), ncol = 1, scales = "free_y") +
+  labs(
+    title = "Medals per year and season",
+    subtitle = str_glue("Visualisation of the number of medals by type and",
+        " year, for Summer and Winter Games"),
+    x = "Year",
+    y = "Count of medals",
+    color = "Medal",
+    caption = str_glue(
+      "Data available from year ", min_year, " to year ", max_year,
+      "\nThe scales on the y-axis (Count of medals) have been adapted ",
+      "for readability."
+    )
+  ) +
+  scale_color_manual(
+    values = c(
+      "Gold"="gold",
+      "Silver"="azure3",
+      "Bronze"="darkgoldenrod3"
+    )
+  ) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,6,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 9, face = "bold",
+      margin = margin(3,6,0,0,"pt"),
+      hjust = 0.5,
+    ),
+    axis.text.y = element_text(
+      size = 9, face = "bold",
+      margin = margin(0,3,0,0,"pt")
+    ),
+    plot.caption = element_text(face = "italic", size = 7),
+    strip.text = element_text(
+      face = "bold.italic", 
+      size = 9, 
+      hjust = 0, 
+      vjust = 0.5, 
+      color = "grey25"
+    )
+  )
+
+```
+  
+Since the 1980's, the global number of medals has dramatically increased.  
+We can see through this plot that the average number of medals in Summer Games 
+is just above 3 times the average of Winter Games in the recent years. In the 
+1950's, there were 5 times less medals given during Winter Games than during 
+Summer Games.  
+The number of Gold, Silver and Bronze medals given is roughly the same for every 
+Games.
+
+  
+

@@ -1,0 +1,417 @@
+---
+title: "Project 5 / Report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    theme: cerulean
+    highlight: zenburn
+  html_notebook: default
+editor_options: 
+  chunk_output_type: inline
+---
+  
+# The Movie DB
+
+```{r Init_lib, message=FALSE, warning=FALSE}
+
+# Deactivate messages and warnings from running code, show code chunks
+
+# Start with loading all the necessary libraries
+library(dplyr)
+library(tidyr)
+library(rmarkdown)
+library(purrr)
+library(stringr)
+library(knitr)
+library(kableExtra)
+library(httr)
+library(magrittr)
+# dplyr::rownames_to_column() deprecated, replaced by tibble::rownames_to_column
+library(tibble) 
+
+```
+
+  
+-------------------------------------------------------------------  
+  
+*In this fifth project, we will explore the data from The Movie DB, using *
+*the API provided from the web.*  
+  
+
+  
+-------------------------------------------------------------------  
+
+## Part 1 / Create new requests from given examples 
+  
+For the first part of this report, the challenge is to send a few queries 
+through the API of The Movie DB. Based on provided examples in the website, 
+I will adapt these in order to answer 3 questions.  
+  
+Here are some informations from The Movie Database used in this exercise:  
+
+- Genres :
+  + Drama = ID 18
+  + Family = ID 10751
+
+- Actors :
+  + Will Ferrell = ID 23659
+  + Liam Neeson = ID 3896
+  + Tom Cruise = ID 500
+  
+    
+### 1. What are the highest grossing dramas from 2010?  
+  
+```{r Data_import_prep_p1.1, message=FALSE, warning=FALSE}
+
+# Import the data from the internet site
+# with_genres 18 = Drama
+# sort by revenue.desc
+qry_01_highest_grossing_dramas_2010 <- GET(
+  str_glue("https://api.themoviedb.org/3/",
+  "discover/movie?api_key=cae3b93dd5e2d16994763563ea0a2eb5",
+  "&with_genres=18&primary_release_year=2010",
+  "&sort_by=revenue.desc")) 
+
+# Flatten the result to extract the data
+qry_01_highest_grossing_dramas_2010 <- qry_01_highest_grossing_dramas_2010 %>% 
+  content() %>% 
+  flatten()
+
+# Extract the original_title as a 1 column tibble
+qry_list_original_title1 <- qry_01_highest_grossing_dramas_2010 %>% 
+  map(extract, "original_title") %>% 
+  flatten() %>% 
+  tibble() %>%
+  rename("original_title"=".") %>% 
+  filter(original_title!="NA")
+
+# Extract the title as a 1 column tibble
+qry_list_title1 <- qry_01_highest_grossing_dramas_2010 %>% 
+  map(extract, "title") %>% 
+  flatten() %>% 
+  tibble()  %>%
+  rename("title"=".") %>% 
+  filter(title!="NA")
+
+# Extract the release_date as a 1 column tibble
+qry_list_release_date1 <- qry_01_highest_grossing_dramas_2010 %>% 
+  map(extract, "release_date") %>% 
+  flatten() %>% 
+  tibble() %>% 
+  rename("release_date"=".") %>% 
+  filter(release_date!="NA")
+
+# Binding the 3 tibbles to have one clean tibble for our answers
+result_01_highest_grossing_dramas_2010 <- bind_cols(
+  qry_list_original_title1,
+  qry_list_title1,
+  qry_list_release_date1
+  ) %>% 
+  rownames_to_column() %>% 
+  rename("#"="rowname")
+
+```
+  
+Here is a table with the 10 highest grossing dramas from 2010:  
+
+```{r Data_result_p1.1, message=FALSE, warning=FALSE}
+result_01_highest_grossing_dramas_2010 %>%  
+  head(10) %>% 
+  rename(
+    "Original title"=original_title,
+    "Title"=title,
+    "Release date"=release_date
+  ) %>%
+  kable(format = "html",escape=F) %>% 
+  kable_styling(
+    bootstrap_options = c("striped", "condensed", "responsive", "bordered"),
+    font_size = 11
+  )  
+```  
+  
+  
+### 2. Have Will Ferrell and Liam Neeson even been in a movie together?  
+  
+```{r Data_import_prep_p1.2, message=FALSE, warning=FALSE}
+
+# Import the data from the internet site
+# with_people 23659 = Will Ferrell and 3896 = Liam Neeson
+# sort by popularity.desc
+qry_02_Will_Ferrell_and_Liam_Neeson  <- GET(
+  str_glue("https://api.themoviedb.org/3/",
+  "discover/movie?api_key=cae3b93dd5e2d16994763563ea0a2eb5",
+  "&with_people=23659,3896",
+  "&sort_by=popularity.desc")) 
+
+# Flatten the result to extract the data
+qry_02_Will_Ferrell_and_Liam_Neeson <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
+  content() %>% 
+  flatten()
+
+# Extract the original_title as a 1 column tibble
+qry_list_original_title2 <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
+  map(extract, "original_title") %>% 
+  flatten() %>% 
+  tibble() %>%
+  rename("original_title"=".") %>% 
+  filter(original_title!="NA")
+
+# Extract the title as a 1 column tibble
+qry_list_title2 <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
+  map(extract, "title") %>% 
+  flatten() %>% 
+  tibble()  %>% 
+  rename("title"=".") %>% 
+  filter(title!="NA")
+
+# Extract the release_date as a 1 column tibble
+qry_list_release_date2 <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
+  map(extract, "release_date") %>% 
+  flatten() %>% 
+  tibble() %>% 
+  rename("release_date"=".") %>% 
+  filter(release_date!="NA")
+
+# Binding the 3 tibbles to have one clean tibble for our answers
+result_02_Will_Ferrell_and_Liam_Neeson <- bind_cols(
+  qry_list_original_title2,
+  qry_list_title2,
+  qry_list_release_date2
+  ) 
+
+```
+  
+Here is a table with all the movies starring Will Ferrell and Liam Neeson:  
+
+```{r Data_result_p1.2, message=FALSE, warning=FALSE}
+
+result_02_Will_Ferrell_and_Liam_Neeson %>%  
+  rename(
+    "Original title"=original_title,
+    "Title"=title,
+    "Release date"=release_date
+  ) %>%
+  kable(format = "html",escape=F) %>% 
+  kable_styling(
+    bootstrap_options = c("striped", "condensed", "responsive", "bordered"),
+    font_size = 11
+  )  
+```
+  
+    
+### 3. Can you find kids movies with Tom Cruise in it?  
+  
+
+```{r Data_import_p1.3, message=FALSE, warning=FALSE}
+
+# Import the data from the internet site
+# with_people 500 = Tom Cruise 
+# with_genres 10751 = Family
+qry_03_Tom_Cruise_for_kids  <- GET(
+  str_glue("https://api.themoviedb.org/3/",
+  "discover/movie?api_key=cae3b93dd5e2d16994763563ea0a2eb5",
+  "&with_people=500&with_genres=10751",
+  "&sort_by=popularity.desc")) 
+
+# result of query gives us only a header and no records...
+
+```
+  
+Tom Cruise has never starred in a kids movie. 
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 2 / Create a query to find the ID of "Pixar" animation company  
+  
+For the second part of this report, I will create a query to search for 
+**Pixar** in The Movie Database. From that result, I will extract the ID of 
+the company.  
+  
+  
+In [the API documentation from The Movie Database](https://developers.themoviedb.org/3/search/search-companies), 
+the generated request looks like :  
+  
+*search/company?api_key=\<\<<api_key\>\>&query=Pixar&page=1*  
+  
+So let's send this request and save the result in a variable:  
+
+```{r Data_import_p2.1, message=FALSE, warning=FALSE}
+
+# Query to search all companies and retrieve informations in relation with
+# "Pixar"
+qry_Pixar_company  <- GET(
+  str_glue("https://api.themoviedb.org/3/",
+  "search/company?api_key=cae3b93dd5e2d16994763563ea0a2eb5",
+  "&query=Pixar")) 
+
+```
+  
+In order to retrieve the ID of **Pixar** animation company, I flatten the 
+content of the result and build a tibble with the different values in columns.  
+  
+```{r Data_import_prep_p2.2, message=FALSE, warning=FALSE}
+
+# Flatten the result to extract the data
+qry_Pixar_company <- qry_Pixar_company %>% 
+  content() %>% 
+  flatten()
+
+# Extract the company name as a 1 column tibble
+qry_Pixar_company1 <- qry_Pixar_company %>% 
+  map(extract, "name") %>% 
+  flatten() %>% 
+  tibble() %>% 
+  rename("company_name"=".") %>% 
+  filter(company_name!="NA")
+
+# Extract the ID as a 1 column tibble
+qry_Pixar_company2 <- qry_Pixar_company %>% 
+  map(extract, "id") %>% 
+  flatten() %>% 
+  tibble()  %>% 
+  rename("id"=".") %>% 
+  filter(id!="NA")
+
+# Binding the 2 tibbles to have one clean tibble for our answers
+result_Pixar_company <- bind_cols(
+  qry_Pixar_company1,
+  qry_Pixar_company2
+  ) 
+```
+  
+And then, I extract the ID from my tibble (filtered on **Pixar**).
+  
+```{r Data_extract_p2.3, message=FALSE, warning=FALSE}
+
+# Retrieve ID of Pixar animation company
+result_Pixar_ID <- result_Pixar_company %>% 
+  filter(company_name=="Pixar") %>% 
+  pull(id) %>% 
+  first() %>% 
+  as.numeric()
+
+```
+  
+And I get a numeric value of **`r result_Pixar_ID`**, the ID of **Pixar** 
+animation company.  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 3 / Create a query to list all the movies from **Pixar**  
+  
+For the third part of this report, I will create a query to list all the 
+movies from **Pixar**.  With this result, I will then convert it to a tibble 
+showing the interesting informations.  
+  
+Here are the queries to retrieve all movies from **Pixar**. As there is a limit 
+of 20 results per page and there are 23 movies in all, I had to create 2 
+requests...  
+As the extraction and conversion of the data is done twice, I create a personal 
+function in order to keep the code (quite) short.   
+  
+```{r Data_import_prep_p3, message=FALSE, warning=FALSE}
+
+# Queries to search all companies and retrieve informations in relation with
+# "Pixar" // 2 queries necessary because of the limit of 20 results per page
+qry_Pixar_movies1  <- GET(
+  str_glue("https://api.themoviedb.org/3/",
+  "discover/movie?api_key=cae3b93dd5e2d16994763563ea0a2eb5",
+  "&include_adult=false&include_video=false&with_runtime.gte=60",
+  "&sort_by=revenue.desc&page=1&with_companies=",result_Pixar_ID))
+
+qry_Pixar_movies2 <- GET(
+  str_glue("https://api.themoviedb.org/3/",
+  "discover/movie?api_key=cae3b93dd5e2d16994763563ea0a2eb5",
+  "&include_adult=false&include_video=false&with_runtime.gte=60",
+  "&sort_by=revenue.desc&page=2&with_companies=",result_Pixar_ID))
+
+# Personal function to get all the details and generate a tibble as result 
+get_movie_details <- function(raw_data) {
+  
+  qry_movies <- raw_data %>% 
+  content() %>% 
+  flatten()
+  
+  # Extract the original title as a 1 column tibble
+  prep_movies1 <- qry_movies %>% 
+  map(extract, "original_title") %>% 
+  flatten() %>% 
+  tibble() %>% 
+  rename("original_title"=".") 
+
+  # Extract the release_date as a 1 column tibble
+  prep_movies2 <- qry_movies %>% 
+  map(extract, "release_date") %>% 
+  flatten() %>% 
+  tibble() %>% 
+  rename("release_date"=".")
+  
+  # Extract the vote_average as a 1 column tibble
+  prep_movies3 <- qry_movies %>% 
+  map(extract, "vote_average") %>% 
+  flatten() %>% 
+  tibble() %>% 
+  rename("vote_average"=".")
+  
+  # Extract the overview as a 1 column tibble
+  prep_movies4 <- qry_movies %>% 
+  map(extract, "overview") %>% 
+  flatten() %>% 
+  tibble() %>% 
+  rename("overview"=".")
+
+  # Binding all columns to create one tibble of results
+  bind_cols(
+  prep_movies1,
+  prep_movies2,
+  prep_movies3,
+  prep_movies4
+  ) %>% 
+  filter(original_title!="NA")
+
+}
+
+result_movies_1 <- get_movie_details(qry_Pixar_movies1)
+
+result_movies_2 <- get_movie_details(qry_Pixar_movies2)
+
+result_Pixar_movies <- bind_rows(result_movies_1, result_movies_2) %>% 
+  rownames_to_column() %>% 
+  rename("#"="rowname")
+
+```
+  
+Sadly, the runtime for each movie is not available in the results. So I will 
+here show the ranking (by descending revenue), the title, release date and 
+the overview of the film.  
+Here is the table with all the movies from **Pixar**, with a runtime **greater** 
+**than one hour** and **sorted by descending revenue**:  
+
+```{r Data_result_p3, message=FALSE, warning=FALSE}
+
+result_Pixar_movies %>%  
+  rename(
+    "Title"=original_title,
+    "Released"=release_date,
+    "Average rating"=vote_average,
+    "Overview"=overview
+  ) %>%
+  kable(format = "html",escape=F) %>% 
+  kable_styling(
+    bootstrap_options = c("striped", "condensed", "responsive", "bordered"),
+    font_size = 11
+  )  %>% 
+  column_spec(column = 1, width = "1cm", bold = F) %>% 
+  column_spec(column = 2, width = "3.5cm", bold = T) %>% 
+  column_spec(column = 3, width = "2cm", bold = F) %>% 
+  column_spec(column = 4, width = "2.5cm", bold = F) 
+
+```
+
+

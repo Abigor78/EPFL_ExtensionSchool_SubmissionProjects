@@ -1,0 +1,1482 @@
+---
+title: "Project 3 / Report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    theme: cerulean
+    highlight: zenburn
+  html_notebook: default
+editor_options: 
+  chunk_output_type: inline
+---
+  
+# A look at politicians in Zurich
+  
+```{r Init_lib_theme, message=FALSE, warning=FALSE}
+
+# Deactivate messages and warnings from running code, show code chunks
+
+# Start with loading all the necessary libraries
+library(readr)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(rmarkdown)
+library(ggplot2)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(knitr)
+library(kableExtra)
+library(DBI)
+library(httr)
+library(RSQLite)
+library(lubridate)
+library(scales)
+library(forcats)
+library(magrittr)
+library(leaflet)
+
+# Load personal theme for ggplot2
+myTheme <- function(base_size = 7.5,
+                    base_family = "sans",
+                    base_line_size = base_size / 22,
+                    base_rect_size = base_size / 22){
+  theme_minimal(base_size=base_size,
+                base_family=base_family,
+                base_line_size=base_line_size,
+                base_rect_size=base_rect_size) %+replace%
+  theme(
+  line = element_line(
+    size = base_line_size,
+    linetype = 1,
+    lineend = "round",
+    color = "grey75"
+    ),
+  text = element_text(
+    face = "plain",
+    color = "grey25",
+    family = "sans",
+    size = base_size,
+    hjust = 0,
+    vjust = 0,
+    angle = 0,
+    lineheight = 1,
+    margin= margin(),
+    debug=FALSE
+    ),
+  plot.background = element_rect(
+    fill = "grey98",
+    color = "grey75",
+    size = 1,
+    linetype = 1
+    ),
+  panel.background = element_rect(fill="grey95",color="grey75"),
+  axis.line = element_line(color="grey50", size=0.25),
+  axis.ticks = element_line(color="grey50", size=0.25),
+  axis.text = element_text(face="bold", size = 9),
+  axis.title = element_text(face = "bold", size = 11, hjust = 0.5, vjust = 0),
+  legend.text = element_text(face = "bold"),
+  legend.title = element_text(face = "bold", size = 8),
+  panel.grid.major.x = element_line(color="grey90"),
+  panel.grid.major.y = element_line(color="grey75"),
+  panel.grid.minor = element_line(color="grey90"),
+  plot.margin=unit(c(12,12,12,12), "points"),
+#  panel.spacing = unit(c(0,0,0,0), "points"),
+  plot.title = element_text(face = "bold", size = 12),
+  plot.subtitle = element_text(
+    face = "italic",
+    size = 10,
+    margin = margin(3,0,12,0,"pt")
+    ),
+  complete = TRUE
+)
+}
+
+# Personal function to check dates and return cleaned valid date
+# If any value is out of scope, set day and month to 1, set year to 2020
+format_clean_date <- function(d,m,y) {
+  year_clean <- case_when(
+    is.na(y) ~ as.numeric(2020),
+    y==0 ~ as.numeric(2020),
+    y>2020 ~ as.numeric(2020),
+    TRUE ~ as.numeric(y)
+    )
+  month_clean <- case_when(
+    year_clean==2020 ~ as.numeric(1),
+    is.na(m) ~ as.numeric(1),
+    m==0 ~ as.numeric(1),
+    m>12 ~ as.numeric(1),
+    TRUE ~ as.numeric(m)
+    )
+  day_clean <- case_when(
+    year_clean==2020 ~ as.numeric(1),
+    leap_year(y) ~ case_when(
+      is.na(d) ~ as.numeric(1),
+      d<1 ~ as.numeric(1),
+      d>29 ~ as.numeric(1),
+      TRUE ~ as.numeric(d)
+      ),
+    !(leap_year(y)) ~ case_when(
+      is.na(d) ~ as.numeric(1),
+      d<1 ~ as.numeric(1),
+      d>28 ~ as.numeric(1),
+      TRUE ~ as.numeric(d)
+      ),
+    TRUE ~ as.numeric(d)
+    )
+  return(dmy(str_glue("{day_clean}-{month_clean}-{year_clean}")))
+}
+
+```
+  
+-------------------------------------------------------------------  
+  
+*In this third project, we will study the open data about politicians in *
+*Zurich and see if we can find interesting patterns.*
+*The data is delivered in a relational database.*  
+  
+*This file is a SQLite database and contains data about elected politicians *
+*in Zurich over the years. The different tables have information about:  *
+  
+*- The elected persons (name, gender, year of birth, year of death…)*  
+*- The mandates people have been elected for*  
+*- The addresses of the elected persons*  
+*- The affiliations to political organisation*  
+  
+  
+```{r Data_import_prep, message=FALSE, warning=FALSE}
+
+# Connect to db and import all tables (see what I can do with these)
+zh_politicians_raw <- dbConnect(SQLite(),"zh_politicians.db")
+
+mandates_raw <- tbl(zh_politicians_raw, "MANDATES")
+addresses_raw <- tbl(zh_politicians_raw, "ADDRESSES")
+affiliations_raw <- tbl(zh_politicians_raw, "AFFILIATIONS")
+persons_raw <- tbl(zh_politicians_raw, "PERSONS")
+
+# Collect the data in variables
+mandates_clean <- collect(mandates_raw) %>% 
+  clean_names()
+addresses_clean <- collect(addresses_raw) %>% 
+  clean_names()
+affiliations_clean <- collect(affiliations_raw) %>% 
+  clean_names()
+persons_clean <- collect(persons_raw) %>% 
+  clean_names()
+
+dbDisconnect(zh_politicians_raw)
+
+# persons -> Clean up the gender column
+# (manually checked that all missing values were male)
+persons_clean_gender <- persons_clean %>% 
+  mutate(gender=if_else(gender=="", "m", gender))
+
+# mandates -> Clean up the start and end years columns
+mandates_clean_date <- mandates_clean %>% 
+  # Filter out the rows with no time indication (one row)
+  filter(
+    mandate_start_year>0
+  ) %>% 
+  # Calculate the duration of mandate (checked if negative values, one row)
+  mutate(
+    mandate_year_duration=mandate_end_year-mandate_start_year
+  ) %>% 
+  # Use duration to add '2020' to still active mandates, invert the end and
+  # start years (one row with small negative value) or simply copy end year
+  mutate(
+    mandate_end_year_clean = case_when(
+      mandate_year_duration<=-1700 ~ 2020,
+      mandate_year_duration<0 ~ as.numeric(mandate_start_year),
+      TRUE ~ as.numeric(mandate_end_year)
+    )
+  ) %>% 
+  # Invert the values start and end year if needed (one row)
+  mutate(
+    mandate_start_year_clean = if_else(
+      mandate_end_year_clean==mandate_start_year&mandate_year_duration<0,
+      as.numeric(mandate_end_year),
+      as.numeric(mandate_start_year)
+    )
+  ) %>% 
+  # Add columns with clean date format (using personal function)
+  mutate(
+    mandate_start_date=format_clean_date(
+      mandate_start_day,
+      mandate_start_month,
+      mandate_start_year_clean
+    )
+  ) %>% 
+  mutate(
+    mandate_end_date=format_clean_date(
+      mandate_end_day,
+      mandate_end_month,
+      mandate_end_year_clean
+    )
+  ) %>% 
+  # Select only useful columns
+  select(
+    id, person_id, assembly, mandate_start_year_clean,
+    mandate_start_date, mandate_end_year_clean, mandate_end_date
+  ) %>% 
+  # Join persons to mandates
+  left_join(persons_clean_gender, by=c("person_id"="id")) %>% 
+  mutate(
+    active_years=map2(
+      mandate_start_year_clean,
+      mandate_end_year_clean,
+      seq
+    )
+  )
+
+# Calculate min and max year in mandates (timespan of available data
+# concerning mandates)
+var_mandates_year_max <- mandates_clean_date %>% 
+  select(mandate_start_year_clean) %>% 
+  max()
+
+var_mandates_year_min <- mandates_clean_date %>% 
+  select(mandate_start_year_clean) %>% 
+  min()
+
+# affiliations -> Clean up the start and end years columns
+affiliations_clean_date <- affiliations_clean %>% 
+  mutate(
+    affiliation_start_date=format_clean_date(
+      affiliation_start_day,
+      affiliation_start_month,
+      affiliation_start_year
+    )
+  ) %>% 
+  mutate(
+    affiliation_end_date=format_clean_date(
+      affiliation_end_day,
+      affiliation_end_month,
+      affiliation_end_year
+    )
+  ) %>% 
+  select(
+    id, mandate_id, person_id, party,
+    affiliation_start_date, affiliation_end_date
+  )
+
+```
+  
+  
+-------------------------------------------------------------------  
+
+## Part 1 / Line plot showing the number of active mandates over the years  
+  
+For the first part of this report, here is a plot showing a timeline from 1800 
+to today with the number of active mandates by assembly.  
+  
+  
+```{r Graph_p1, message=FALSE, warning=FALSE}
+
+# Generate data to feed plot (count of mandates per assembly and year)
+plot_mandates_per_year <- mandates_clean_date %>%
+  select(assembly, active_years) %>% 
+  unnest() %>% 
+  group_by(assembly,active_years) %>% 
+  summarise(count_active_mandates=n()) %>% 
+  ungroup()
+
+# Variables to spot and add layer if Council was disrupted
+var_minmax_years_councils <- plot_mandates_per_year %>% 
+  group_by(assembly) %>% 
+  summarise(
+    min_year=min(active_years),
+    max_year=max(active_years)
+  ) %>% 
+  left_join(plot_mandates_per_year, by = c(
+    "assembly"="assembly", 
+    "min_year"="active_years")
+  ) %>% 
+  transmute(
+    assembly,
+    min_year,
+    mandates_min=count_active_mandates,
+    max_year
+  ) %>% 
+  left_join(plot_mandates_per_year, by = c(
+    "assembly"="assembly", 
+    "max_year"="active_years")
+  ) %>% 
+  transmute(
+    assembly,
+    min_year,
+    mandates_min,
+    max_year,
+    mandates_max=count_active_mandates
+  )
+
+plot_mandates_per_year %>% 
+  ggplot(aes(x = active_years, y = count_active_mandates), color = assembly) +
+  geom_line(aes(color = assembly), size = 0.75) +
+  labs(
+    title = "Number of active mandates per year and assembly",
+    subtitle = str_glue(
+      "The 'peaks' are caused by election years when ",
+      "multiple mandates were active for the same seat"
+    ),
+    x = "Years",
+    y = "Count of active mandates",
+    color = "Assembly",
+    caption = str_glue(
+      "Data available from year ", var_mandates_year_min,
+      " to year ", var_mandates_year_max
+    )
+  ) +
+  scale_fill_manual(
+    aesthetics = c("color","fill"),
+    "Assembly",
+    values = c(
+      "deepskyblue3",       #"Cantonal Council"
+      "darkslategray4",     #"Executive Council"
+      "orangered2",         #"Grand Council"
+      "khaki3"              #"Small Council"
+    )             
+  ) +  
+  # Add layer for min years of assemblies (point + label)
+  geom_point(
+    data = select(
+      var_minmax_years_councils,
+      assembly, min_year, mandates_min
+    ),
+    mapping = aes(x = min_year,y = mandates_min, fill = factor(assembly)),
+    shape = 21,
+    size = 3
+  ) +
+  geom_label(
+    data = select(
+      var_minmax_years_councils,
+      assembly, min_year, mandates_min
+    ),
+    mapping = aes(
+      x = min_year, 
+      y = mandates_min, 
+      label = min_year,
+      color = assembly
+    ),
+    fill = "white",
+    fontface = "bold",
+    size = 3,
+    show.legend = FALSE,
+    position = position_nudge(x = 8, y = 25)
+  ) +  
+  # Add layer for max years of assemblies (point + label)
+  geom_point(
+    data = select(
+      var_minmax_years_councils,
+      assembly, max_year, mandates_max
+    ),
+    mapping = aes(
+      x = max_year,
+      y = mandates_max,
+      fill = factor(assembly)
+    ),
+    shape = 23,
+    size = 3
+  ) +
+  geom_label(
+    data = select(
+      var_minmax_years_councils,
+      assembly, max_year, mandates_max
+    ),
+    mapping = aes(
+      x = max_year, 
+      y = mandates_max, 
+      label = max_year, 
+      color = assembly
+    ),
+    fill = "white",
+    fontface = "bold",
+    size = 3,
+    show.legend = FALSE,
+    position = position_nudge(x = 8, y = 25)
+  ) +
+  guides(color = guide_legend(override.aes = list(size=2.5))) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,6,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 9, face = "bold",
+      margin = margin(3,6,0,0,"pt"),
+      hjust = 0.5,
+    ),
+    axis.text.y = element_text(
+      size = 9, face = "bold",
+      margin = margin(0,3,0,0,"pt")
+    ),
+    panel.grid.major.x = element_line(color="gray75"),
+    panel.grid.minor.x = element_line(color="gray75"),
+    panel.grid.minor.y = element_blank(),
+    plot.caption = element_text(face = "italic", size = 7)
+  )
+
+```
+  
+  
+### Part 1 Findings  
+  
+During the 19th century, there seems to have been more elected people with a 
+wider fluctuation in numbers until World War II. Since then (~1940), the 
+fluctuation is stable and the pulse of the election years is visible.  
+An interesting fact is to see the mutation of the political life in Zurich, 
+as the Small Council and Grand Council were replaced successively by the 
+Executive Council and the Cantonal Council in the middle of the 19th century.  
+
+  
+  
+-------------------------------------------------------------------  
+
+## Part 2 / Deeper in plot of part 1 - View per gender by assembly  
+  
+For the second part of this report, we go deeper in the plot of part one... 
+We show a facet plot with the different assemblies and a different line by 
+gender. We can then see the evolution and proportion of women in the political 
+environment in Zurich.  
+  
+  
+```{r Graph_p2, message=FALSE, warning=FALSE}
+
+plot_mandates_per_year_and_gender <- mandates_clean_date %>% 
+  select(assembly, active_years, gender) %>%
+  unnest() %>% 
+  group_by(assembly, active_years, gender) %>% 
+  summarise(count_active_mandates=n()) %>% 
+  ungroup()
+
+# Values to determine the "free_y" scales for facetting
+plot_facet_def <- plot_mandates_per_year_and_gender %>% 
+  group_by(assembly, active_years, gender) %>% 
+  mutate(total_mandates=sum(count_active_mandates)) %>% 
+  ungroup() %>% 
+  group_by(assembly) %>% 
+  mutate(max_value=max(total_mandates)) %>% 
+  ungroup() %>% 
+  select(assembly, max_value) %>% 
+  distinct %>% 
+  arrange(desc(max_value)) %>%
+  mutate(scale_y=if_else(
+    lag(max_value)>400, 
+    max(max_value), 
+    nth(max_value, n = 3),
+    missing = max(max_value)
+    )
+  )
+
+plot_mandates_per_year_and_gender %>% 
+  ggplot(aes(x = active_years, y = count_active_mandates), color = gender) +
+  geom_line(aes(color = gender), size = 0.75) +
+  geom_point(data = plot_facet_def, aes(x = 1850, y = scale_y), alpha = 0) +
+  facet_wrap(
+    vars(
+      factor(assembly, 
+          levels = c("Cantonal Council",
+                     "Grand Council",
+                     "Executive Council",
+                     "Small Council"
+                     ))),
+    ncol = 2, 
+    scales = "free_y"
+  ) +
+  labs(
+    title = "Number of active mandates per assembly and gender",
+    subtitle = str_glue(
+      "We see here the distribution of mandates ",
+      "by gender in the different assemblies"
+    ),
+    x = "Years",
+    y = "Count of active mandates",
+    color = "Gender",
+    caption = str_glue(
+      "Data available from year ", var_mandates_year_min,
+      " to year ", var_mandates_year_max
+    )
+  ) +
+  scale_color_manual(
+    values = c(
+      "m"="steelblue3",
+      "w"="tomato1"
+    ),
+    labels = c(
+      "Male",
+      "Female"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size=1.5))) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,6,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 9, face = "bold",
+      margin = margin(3,6,0,0,"pt"),
+      hjust = 0.5,
+      ),
+    axis.text.y = element_text(
+      size = 9, face = "bold",
+      margin = margin(0,3,0,0,"pt")
+      ),
+    strip.text.x = element_text(face = "bold.italic", size = 7, hjust= 0.5),
+    plot.caption = element_text(face = "italic", size = 7)
+  )
+
+```
+  
+  
+```{r Var_Findings_p2, message=FALSE, warning=FALSE}
+
+var_women_execCouncil <- mandates_clean_date %>% 
+  filter(assembly=="Executive Council", gender=="w") %>% 
+  summarise(total=n()) %>% 
+  pull()
+
+```
+  
+### Part 2 Findings  
+  
+Women were not represented at all, at least until the 60's. Since then, we can 
+see a constant progression of their representatives in the Cantonal Council. 
+There are very few women in the Executive Council (
+**`r var_women_execCouncil`** women in all at end of 
+**`r var_mandates_year_max`**).  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 3 / Plot showing the proportion of each party by assembly in year 2000  
+  
+For the third part of this report, we will look at the proportion of elected 
+politicians from each party in year 2000. We will separate the views by 
+assembly in pie-charts for an easy visualization.  
+  
+    
+```{r Graph_p3, message=FALSE, warning=FALSE}
+
+# Prepare data for graphic
+mandates_clean_date_g3 <- mandates_clean_date %>% 
+  filter(
+    mandate_start_date<"1999-12-31"|mandate_start_date=="2020-01-01",
+    mandate_end_date>"2000-12-31"
+  ) %>% 
+  left_join(
+    affiliations_clean_date, by = c("id"="mandate_id")
+  ) %>% 
+# Void indication of party is considered as without party
+  mutate(party=if_else(party=="","parteilos",party))
+
+# Summarise to get total count per party
+pie_pol_by_assembly_2000 <- mandates_clean_date_g3 %>% 
+  group_by(assembly,party) %>% 
+  summarise(count_rows=n()) %>% 
+  ungroup()
+
+# Summarise to get total count per assembly
+total_by_assembly_g3 <- pie_pol_by_assembly_2000 %>% 
+  group_by(assembly) %>% 
+  summarise(total_count=sum(count_rows)) %>% 
+  ungroup()
+
+# Compute percentage by assembly for each party
+pie_pol_by_assembly_2000 <- pie_pol_by_assembly_2000 %>% 
+  left_join(total_by_assembly_g3, by = c("assembly")) 
+pie_pol_by_assembly_2000 <- pie_pol_by_assembly_2000 %>%  
+  mutate(percentage=count_rows/total_count)
+
+# Create table with grouped values for parties with small percentage
+pie_pol_by_assembly_treshold <- pie_pol_by_assembly_2000 %>% 
+  group_by(assembly) %>% 
+  mutate(
+    party_grouped=if_else(
+      percentage<0.04,
+      "Other parties",
+      party
+    )
+  ) %>% 
+  ungroup() %>% 
+  select(party_grouped, assembly, count_rows) %>% 
+  group_by(party_grouped, assembly) %>% 
+  tally(wt = count_rows) %>% 
+  ungroup() %>% 
+  left_join(total_by_assembly_g3, c("assembly")) %>% 
+  mutate(percentage=n/total_count)
+
+pie_pol_by_assembly_treshold %>% 
+  ggplot(aes(x = "", y = percentage, fill = party_grouped)) +
+  geom_bar(stat = "identity", position = "stack", color = "grey95") +
+  facet_grid(cols = vars(assembly)) +
+  coord_polar("y", start = 0) +
+  labs(
+    title = "Proportion of each party by assembly in year 2000",
+    subtitle = str_glue(
+      "This is how the political chess was distributed in ",
+      "year 2000 in Zurich, by assembly"
+    )
+  ) +
+  scale_fill_manual(
+    "Party",
+    values = c("AL"="red",
+      "SP"="tomato2",
+      "EVP"="gold",
+      "CVP"="orange2",
+      "FDP"="royalblue1",
+      "SVP"="deepskyblue1",
+      "Other parties"="gray80"
+    )
+  ) +
+  myTheme() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.justification = c(1,0.5),
+    legend.position = c(1.2,0.6),
+    strip.text.x = element_text(face = "bold.italic", size = 9, hjust= 0.5),
+    plot.caption = element_text(face = "italic", size = 7),
+    plot.margin = unit(c(12,90,12,12),"points")
+  )
+
+```
+
+
+```{r Tbl_p3, message=FALSE, warning=FALSE}
+
+# Variable to set background of rows according to assembly
+var_group_rows_max <- pie_pol_by_assembly_2000 %>% 
+  summarise(count_of_rows=n()) %>% 
+  pull
+var_group_rows_min <- pie_pol_by_assembly_2000 %>% 
+  filter(assembly=="Executive Council") %>% 
+  summarise(count_of_rows=n()) %>% 
+  pull()
+var_group_rows_min <- var_group_rows_max-var_group_rows_min+1
+
+# Generate the table of results
+pie_pol_by_assembly_2000 %>% 
+  select(party,assembly,count_rows,percentage) %>% 
+  arrange(desc(percentage)) %>% 
+  arrange(assembly) %>% 
+  mutate(percentage=str_glue("{round(percentage*100,3)} %")) %>% 
+# Add cell_spec to determine (visual) properties
+  mutate(
+    party=cell_spec(party, "html", align = "justify"),
+    assembly=cell_spec(assembly, "html", align = "justify"),
+    count_rows=cell_spec(count_rows, "html", align = "justify"),
+    percentage=cell_spec(percentage, "html",align = "justify")
+  ) %>% 
+  rename(
+    "Party"=party,
+    "Assembly"=assembly,
+    "Elected politicians"=count_rows,
+    "Percentage"=percentage
+  ) %>%
+  kable(format = "html",escape=F) %>% 
+  kable_styling(
+    bootstrap_options = c("striped", "condensed", "responsive", "bordered"),
+    font_size = 11
+  ) %>% 
+  column_spec(column = 1, width = "3cm", bold = T) %>% 
+  column_spec(column = 2, width = "3cm", bold = F) %>% 
+  column_spec(column = 3:4, width = "3cm", bold = T) %>% 
+  row_spec(
+    row = 0,
+    font_size=12,
+    background = "#E9E9E9",
+    color = "#660000"
+  ) %>% 
+  row_spec(
+    row = 1:(var_group_rows_min-1),
+    background = "#E9E9FD",
+    color = "#000066"
+  ) %>% 
+  row_spec(
+    row = var_group_rows_min:var_group_rows_max,
+    background = "#E5FDE5",
+    color = "#006600"
+  )
+
+```  
+  
+
+### Part 3 Findings  
+  
+In the pie charts, the blue 'slices' are the right wing parties. We can see 
+that they dominate both assemblies.  
+On the other hand, the socialist party (SP, red 'slice') is doing quite well 
+as it concentrates most of the political weight of the left wing in both 
+assemblies.  
+The 3 parties represented in the Executive Council ('FDP', 'SP' and 'SVP') are 
+also the 3 same parties with the most elected politicians in the 
+Cantonal Council.  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 4 / Plot showing the proportion of each party by assembly since 1980  
+  
+For the fourth part of this report, we will look at the proportion of elected 
+politicians from each party since 1980. We will separate the views by 
+assembly and see if we can learn something about the evolution of the 
+political chess.  
+  
+    
+  
+```{r Graph_p4, message=FALSE, warning=FALSE}
+
+# Generate data to feed plot (count of mandates per assembly and year)
+mandates_clean_date_g4 <- mandates_clean_date %>%
+# Limit to the last 40 years
+  filter(mandate_start_year_clean>1980) %>% 
+  left_join(affiliations_clean_date, by = c("id"="mandate_id")) %>% 
+# Void indication of party is considered as without party
+  mutate(party=if_else(party=="","parteilos",party)) %>% 
+  unnest() %>% 
+  group_by(assembly,active_years,party) %>% 
+  summarise(count_mandates=n()) %>% 
+  ungroup()
+
+# For more clarity in the plot, consider average number of seats per party
+# over the period to determine what party is significant and select upper half
+g4_party_significance <- mandates_clean_date_g4 %>% 
+  group_by(party) %>% 
+  summarise(average_representation=mean(count_mandates)) %>% 
+  ungroup()
+var_median <- g4_party_significance %>% 
+  summarise(var_median=median(average_representation)) %>% 
+  pull()
+vec_selected_parties <- g4_party_significance %>% 
+  filter(average_representation>=var_median) %>% 
+  pull(party)
+
+# Check that all parties from 'Executive Council' are in the selected list
+# (few politicians so if one party is not in the list, it will seriously 
+# impact the available data for the plot)
+check_executive <- mandates_clean_date_g4 %>% 
+  filter(assembly=="Executive Council") %>% 
+  group_by(party) %>% 
+  summarise(total_of_mandates=sum(count_mandates)) %>% 
+  ungroup() %>% 
+  mutate(checked=if_else(party %in% vec_selected_parties, TRUE, FALSE))
+
+count_executive_row <- check_executive %>% 
+  summarise(value=sum(checked)) %>% 
+  pull()
+
+check_test <- nrow(check_executive)
+
+check_test <- if(check_test==count_executive_row) {FALSE;TRUE}
+
+# Filter the data to keep only the relevant parties
+line_pol_by_assembly <- mandates_clean_date_g4 %>% 
+  filter(party %in% vec_selected_parties)
+
+line_pol_by_assembly %>% 
+  ggplot(mapping = aes(x = active_years, y = count_mandates, color = party)) +
+  geom_line(aes(color = party), size = 0.75, alpha = 0.75) +
+  facet_wrap(vars(assembly), nrow = 2, scales = "free") +
+  labs(
+    title = "Count of each party by assembly since 1980",
+    subtitle = str_glue(
+      "Showing the ", length(vec_selected_parties), 
+      " most significant parties and their evolution since 1980"
+    ),
+    x = "Years",
+    y = "Count of active mandates",
+    caption = str_glue(
+      "For clarity, limited to the {length(vec_selected_parties)} most ",
+      "significant parties out of a total of {nrow(g4_party_significance)}",
+      ".\nSignificancy is calculated on the average number of seats over the ",
+      "period. Selected if in average more than {round(var_median,2)} seats."
+    )
+  ) +
+  scale_color_manual(
+    "Party",
+    values = c("BDP"="darkorchid2",
+      "CVP"="orange2",
+      "EDU"="tan3",
+      "EVP"="gold",
+      "FDP"="royalblue1",
+      "GLP"="turquoise2",
+      "GP"="green2",
+      "Grüne"="green3",
+      "LdU"="coral3",
+      "SP"="tomato2",
+      "SVP"="deepskyblue1")
+  ) +
+  guides(color = guide_legend(override.aes = list(size=2.5))) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,6,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 9, face = "bold",
+      margin = margin(3,6,0,0,"pt"),
+      hjust = 0.5,
+    ),
+    axis.text.y = element_text(
+      size = 9, face = "bold",
+      margin = margin(0,3,0,0,"pt")
+    ),
+    strip.text.x = element_text(face = "bold.italic", size = 9, hjust= 0.5),
+    plot.caption = element_text(face = "italic", size = 7)
+  )
+
+```
+  
+
+### Part 4 Findings  
+  
+The socialist party ("SP", in red) has been losing seats since 2002-2003 in 
+favor of the green parties ("GP" and "Grüne", both in green). The center right 
+parties have a clear majority since the mid 90's.  
+Another interesting fact is that the political chess has greatly changed 
+since the 80's, with some political parties growing bigger and absorbing 
+the votes of smaller formations. It seems that it has been losing diversity 
+over the years.  
+  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 5 / Average life expectancy of the politicians  
+  
+For the fifth part of this report, we will take a look at the life 
+expectancy of the politicians in our data. We will also try to figure out 
+if having a title (e.g. Dipl. ETH, Dr. med., ...) has an impact on life 
+expectancy... or not.  
+  
+    
+```{r Graph_p5, message=FALSE, warning=FALSE}
+
+# Select the data and prepare it
+plot_lifespan <- persons_clean_gender %>% 
+  mutate(lifespan=as.numeric(year_of_death)-as.numeric(year_of_birth)) %>% 
+  filter(!is.na(lifespan),lifespan>=30,lifespan<=105) %>% 
+  mutate(with_title=if_else(title=="",FALSE,TRUE)) %>% 
+  mutate(group_year_of_birth=round(year_of_birth/10,0)*10)
+
+# Create tibble with average lifespan by category (with/without title, total)
+overall_avg_lifespan <- plot_lifespan %>% 
+  summarise(average_lifespan=mean(lifespan)) %>% 
+  mutate(Life_expectancy="Total") %>% 
+  select(Life_expectancy,average_lifespan)
+
+overall_avg_lifespan_title <- plot_lifespan %>% 
+  group_by(with_title) %>% 
+  summarise(average_lifespan=mean(lifespan)) %>% 
+  mutate(with_title=if_else(with_title==TRUE,"With title","Without title")) %>% 
+  rename(Life_expectancy=with_title) %>% 
+  bind_rows(overall_avg_lifespan)
+
+# List of average lifespan values by year and with/without title
+plot_lifespan_birthyear_title <- plot_lifespan %>%  
+  group_by(year_of_birth,with_title) %>% 
+  summarise(average_lifespan=mean(lifespan))
+
+plot_lifespan_birthyear_title %>% 
+  ggplot(aes(
+    x = average_lifespan,
+    fill = with_title,
+    color = average_lifespan
+    )
+  ) +
+  geom_density(
+    alpha = 0.65,
+    size = 0.1,
+    color = "gray75",
+    position = "dodge"
+  ) +  
+  geom_density(
+    alpha = 0,
+    fill = "red",
+    color = "blue",
+    size = 1,
+    linetype = "dotdash"
+  ) +
+  scale_x_discrete(
+    limits = c(40,50,60,70,80,90)
+  )+
+  scale_fill_manual(
+    "Average life expectancy",
+    values = c(
+      "FALSE"="darkslategray3",
+      "TRUE"="deepskyblue3"
+    ),
+    labels = c(
+      "Without title",
+      "With title",
+      "Average overall"
+    )
+  ) +
+  scale_color_manual(
+    "",
+    labels = "Average overall"
+  ) +
+  labs(
+    title = "Density of average life expectancy in our panel of politicians",
+    subtitle = str_glue(
+      "Showing the difference between people with or without titles ",
+      "(the blue line is the overall average)"
+    ),
+    x = "Average Life Expectancy",
+    y = "Density"
+  ) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,6,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 9, face = "bold",
+      margin = margin(3,6,0,0,"pt"),
+      hjust = 0.5,
+    ),
+    axis.text.y = element_blank(),
+    legend.title = element_text(margin = margin(3,0,6,0,"pt"), size = 9),
+    strip.text.x = element_text(face = "bold.italic", size = 9, hjust= 0.5),
+    plot.caption = element_text(face = "italic", size = 7)
+  )
+
+```
+
+```{r Graph_p5bis, message=FALSE, warning=FALSE}
+
+plot_lifespan_birthyear_grouped_title <- plot_lifespan %>% 
+  group_by(group_year_of_birth,with_title) %>% 
+  summarise(lifespan=mean(lifespan))
+
+plot_lifespan_birthyear_grouped_title %>% 
+  filter(group_year_of_birth>1810) %>% 
+  ggplot(aes(x = group_year_of_birth, y = lifespan)) +
+  geom_col(aes(fill = with_title), stat = "identity",  position = "dodge") +
+  geom_hline(
+    data = overall_avg_lifespan_title, 
+    mapping = aes(yintercept = average_lifespan, color = Life_expectancy),
+    size = 1,
+    linetype = "dotdash"
+  ) +
+  scale_x_continuous(
+    breaks = c(seq(1820, 1950, 10))
+  ) +
+ scale_color_manual(
+   "Overall average",
+   values = c(
+     "Total"="gray50",
+     "Without title"="darkslategray3",
+     "With title"="deepskyblue3"
+   )
+ ) +
+ scale_fill_manual(
+    "Title",
+    limits = c(
+      "TRUE",
+      "FALSE"
+    ),
+    values = c(
+      "TRUE"="deepskyblue3",
+      "FALSE"="darkslategray3"
+    ),
+    labels = c(
+      "With title",
+      "Without title"
+    )
+  ) +
+  coord_cartesian(
+    xlim = c(seq(1820, 1950, 10)),
+    ylim = c(seq(50,90,10))
+  ) +
+  labs(
+    title = "Politicians' life expectancy per year of birth since 1920",
+    subtitle = "Showing the difference between people with or without titles",
+    x = "Year of birth (grouped by decade)",
+    y = "Average life expectancy"
+  ) +
+  guides(
+    color = guide_legend(
+      override.aes = list(size = 1.5, linetype = "solid")
+      )
+  ) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,6,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 9, face = "bold", angle = 30,
+      margin = margin(3,6,0,0,"pt"),
+      hjust = 0.8, vjust = 1
+    ),
+    axis.text.y = element_text(
+      size = 9, face = "bold",
+      margin = margin(3,6,0,0,"pt"),
+      hjust = 0.5,
+    ),
+    strip.text.x = element_text(face = "bold.italic", size = 9, hjust= 0.5),
+    plot.caption = element_text(face = "italic", size = 7),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color="grey75"),
+    panel.grid.minor = element_line(color="grey90"),
+    legend.title = element_text(margin = margin(0,0,6,0,"pt"))
+  )
+
+```
+  
+```{r Graph_p5ter, message=FALSE, warning=FALSE}
+
+plot_lifespan %>% 
+  ggplot(aes(x = with_title, y = lifespan, fill = with_title)) +
+  geom_violin(scale = "area", trim = F) +
+  coord_flip()+
+  labs(
+    title = "Density of average life expectancy in our panel of politicians",
+    subtitle = "Showing the difference between people with or without titles",
+    x = "Density",
+    y = "Average Life Expectancy"
+  ) +
+ scale_fill_manual(
+    "Title",
+    limits = c(
+      "TRUE",
+      "FALSE"
+    ),
+    values = c(
+      "TRUE"="deepskyblue3",
+      "FALSE"="darkslategray3"
+    ),
+    labels = c(
+      "With title",
+      "Without title"
+    )
+  ) +
+  myTheme() +
+  theme(
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
+    axis.title.y = element_text(margin = margin(3,6,3,3,"pt")),
+    axis.text.x = element_text(
+      size = 9, face = "bold",
+      margin = margin(3,6,0,0,"pt"),
+      hjust = 0.5,
+    ),
+    axis.text.y = element_blank(),
+    legend.title = element_text(margin = margin(3,0,6,0,"pt"), size = 9),
+    strip.text.x = element_text(face = "bold.italic", size = 9, hjust= 0.5),
+    plot.caption = element_text(face = "italic", size = 7)
+  )
+
+```
+
+```{r Findings_p5, message=FALSE, warning=FALSE}
+
+overall_avg_lifespan_horizontal <- overall_avg_lifespan_title %>% 
+  spread(Life_expectancy,average_lifespan) %>% 
+  rename(overall=Total) %>% 
+  clean_names() %>% 
+  mutate(difference=with_title-without_title)
+  
+var_lifespan_diff_pc <- overall_avg_lifespan_horizontal %>% 
+  mutate(difference_pc=difference/overall) %>% 
+  mutate(difference_pc=round(difference_pc*100,2)) %>% 
+  pull()
+```
+
+### Part 5 Findings  
+
+The title factor seems to be an important factor for life expectancy. The 
+difference in the life expectancy averages for our 2 groups (with title and 
+without title) is of 
+**`r round(pull(overall_avg_lifespan_horizontal,difference),2)`** years. 
+This equates to a **`r var_lifespan_diff_pc`%** difference.  
+
+The life expectancy by category is :  
+ 
+* Overall : **`r round(pull(overall_avg_lifespan_horizontal,overall),2)`**
+* Politicians with a title : 
+**`r round(pull(overall_avg_lifespan_horizontal,with_title),2)`**
+* Politicians without title : 
+**`r round(pull(overall_avg_lifespan_horizontal,without_title),2)`**
+  
+  
+-------------------------------------------------------------------  
+
+## Part 6 / Top 10 politicians with the most mandates  
+  
+For the sixth part of this report, we will take a look at the top 10 
+politicians when considering the number of mandates.  
+  
+    
+```{r Graph_p6, message=FALSE, warning=FALSE}
+
+# Create a colum "highlight" for the row with most mandates
+count_of_mandates_p6 <- mandates_clean_date %>% 
+  group_by(person_id) %>% 
+  summarise(count_of_mandates_per_person=n()) %>% 
+  ungroup() %>% 
+  arrange(desc(count_of_mandates_per_person),desc(person_id)) %>% 
+  top_n(10) %>% 
+  mutate(highlight=if_else(
+    count_of_mandates_per_person==max(count_of_mandates_per_person),
+    TRUE, FALSE)
+  )
+
+# Link summary with names of politicians
+plot_count_of_mandates_g6 <- count_of_mandates_p6 %>% 
+  left_join(mandates_clean_date, by = c("person_id"="person_id")) %>% 
+  mutate(full_name=str_glue("{lastname} {firstname}")) %>% 
+  select(id, assembly, mandate_start_year_clean, mandate_end_year_clean,
+         person_id, full_name, gender) %>% 
+  group_by(person_id) %>% 
+# Get first and last year over all mandates, plus the overall duration
+  mutate(
+    first_year_first_mandate=min(mandate_start_year_clean),
+    last_year_last_mandate=max(mandate_end_year_clean),
+    years_elected=sum(mandate_end_year_clean-mandate_start_year_clean)) %>% 
+  select(person_id, full_name, gender, first_year_first_mandate,
+         last_year_last_mandate, years_elected) %>% 
+  distinct() %>% 
+  left_join(count_of_mandates_p6, by = c("person_id"="person_id")) %>% 
+  arrange(desc(years_elected))
+
+# One row tibble to easily extract fields
+winner_mandates <- plot_count_of_mandates_g6 %>% 
+  filter(highlight==TRUE)
+
+# Variables for findings
+earliest_year <- plot_count_of_mandates_g6 %>% 
+  arrange(first_year_first_mandate) %>% 
+  head(1) %>% 
+  pull(first_year_first_mandate)
+
+latest_year <- plot_count_of_mandates_g6 %>%
+  arrange(desc(last_year_last_mandate)) %>% 
+  head(1) %>% 
+  pull(last_year_last_mandate)
+
+plot_count_of_mandates_g6 %>% 
+  ggplot(aes(
+    x = full_name,
+    y = count_of_mandates_per_person,
+    fill = highlight
+    )
+  ) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  geom_text(
+    aes(
+      x = full_name, 
+      y = count_of_mandates_per_person, 
+      label = count_of_mandates_per_person
+    ), 
+    color = "grey25",
+    size = 4, 
+    fontface = "bold.italic",
+    family = "sans",
+    hjust = 2
+  ) +
+  geom_text(
+    aes(
+      x = full_name,
+      y = 4,
+      label = str_glue("Between  {first_year_first_mandate}",
+        "  and  {last_year_last_mandate}"
+      )
+    ), 
+    color = "grey25",
+    size = 3, 
+    fontface = "bold.italic",
+    family = "sans",
+    hjust = 1
+  ) +
+  scale_fill_manual(
+    values = c("darkslategray3", "deepskyblue3")
+  ) +
+  labs(
+    title = "Top 12 of politicians with most mandates",
+    subtitle = str_glue("11 politicians had 6 mandates and one had 7, ",
+      "so a top 10 is not really possible"
+    ),
+    x = "Full name",
+    y = "Number of mandates"
+  ) +
+  myTheme()+
+  theme(
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
+    #axis.title.y = element_text(hjust = 0.9),
+    axis.text.y = element_text(
+      size = 8, face = "bold",
+      margin = margin(0,6,0,0,"pt")
+    ),
+    legend.position = "none",
+    panel.grid.major.x = element_line(color="grey75"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_line(color="grey75")
+  )
+
+```
+  
+  
+### Part 6 Findings  
+
+The politician with the most mandates is 
+**`r pull(winner_mandates,full_name)`** with 
+**`r pull(winner_mandates,count_of_mandates_per_person)`**.    
+  
+**`r pull(winner_mandates,full_name)`** started his public life as an elected 
+politician in year **`r pull(winner_mandates,first_year_first_mandate)`** and 
+finished in year **`r pull(winner_mandates,last_year_last_mandate)`** after  
+**`r pull(winner_mandates,years_elected)`** years as an elected politician.  
+  
+Another remarkable fact in this list is that all the top scorers for multiple 
+mandates were between year **`r earliest_year`** and year **`r latest_year`**.
+
+
+  
+-------------------------------------------------------------------  
+
+## Part 7 / Do some politician have multiple mandates at the same time?  
+  
+For the seventh part of this report, we will take a look at the politicians' 
+mandates to see if any of them have had multiple mandates at the same time.  
+  
+```{r Part7, message=FALSE, warning=FALSE}
+
+var_total_number_of_politicians <- persons_clean %>% 
+  summarise(total_politicians=n_distinct(id)) %>% 
+  pull()
+
+# Create tibble with summary of mandates count per person and filter #>1
+count_of_mandates_p7 <- mandates_clean_date %>% 
+  group_by(person_id) %>% 
+  summarise(count_of_mandates_per_person=n()) %>% 
+  ungroup() %>% 
+  filter(count_of_mandates_per_person>1) %>% 
+  arrange(desc(count_of_mandates_per_person))
+
+# Regroup summary with table of politicians
+tbl_count_of_mandates_p7 <- count_of_mandates_p7 %>% 
+  left_join(mandates_clean_date, by = c("person_id"="person_id")) %>% 
+  mutate(full_name=str_glue("{lastname} {firstname}")) %>%
+  select(full_name, gender, id, assembly,
+         count_of_mandates_per_person, mandate_start_year_clean, 
+         mandate_start_date, mandate_end_year_clean, 
+         mandate_end_date, person_id
+  ) %>%
+# Order table and create index of mandates per person
+  arrange(person_id, mandate_start_year_clean) %>% 
+  group_by(person_id) %>% 
+  mutate(mandate_index=row_number(person_id)) %>% 
+  arrange(person_id, mandate_index) %>% 
+# If start_year and end_year are the same, discard
+# If different, create a "test" date (check overlap of years)
+  mutate(
+    check_start_date=if_else(
+      mandate_end_year_clean!=mandate_start_year_clean,
+      str_glue("{mandate_start_year_clean}-01-02"),
+      "Discarded"
+    )
+  ) %>% 
+  mutate(
+    check_end_date=if_else(
+      mandate_end_year_clean!=mandate_start_year_clean,
+      str_glue("{mandate_end_year_clean}-01-01"),
+      "Discarded"
+    )
+  )%>%
+# Get date of next row
+  mutate(
+    lag_start_date=if_else(
+      person_id==lag(person_id),
+      lag(check_start_date),
+      check_start_date
+    ),
+    lag_end_date=if_else(
+      person_id==lag(person_id),
+      lag(check_end_date),
+      check_end_date
+    )
+  ) %>% 
+  filter(
+    mandate_index>1,
+    check_start_date!="Discarded",
+    lag_start_date!="Discarded"
+  ) %>% 
+  select(
+    mandate_index, person_id, full_name, assembly, mandate_start_date,
+    mandate_end_date, check_start_date, lag_start_date, check_end_date,
+    lag_end_date
+  ) %>% 
+# Check overlap of "test" dates (actual row and next row)
+  mutate(
+    check_overlap=int_overlaps(
+      interval(check_start_date,check_end_date),
+      interval(lag_start_date,lag_end_date)
+    )
+  ) %>% 
+  select(
+    mandate_index, person_id, full_name, assembly, mandate_start_date,
+    lag_start_date, mandate_end_date, lag_end_date, check_overlap
+  ) %>% 
+  arrange(person_id,mandate_index) %>% 
+  filter(check_overlap==TRUE)
+
+```
+
+  
+### Part 7 Findings  
+  
+There are **`r var_total_number_of_politicians`** politicians in this dataset. 
+Out of the total number of politicians, **`r nrow(count_of_mandates_p7)`** of 
+them have had 2 or more mandates.  
+Out of these **`r nrow(count_of_mandates_p7)`** politicians, 
+**`r nrow(distinct(tbl_count_of_mandates_p7, person_id))`** have had mandates 
+running at the same time.  
+This number excludes overlapping over a short period of transition between 2 
+mandates (there often is 2 weeks overlapping). 
+
+
+  
+-------------------------------------------------------------------  
+
+## Part 8 / Have some politicians been affiliated to different parties?  
+  
+For the eighth part of this report, we will take a look at the politicians' 
+affiliations to parties, to see if any of them have changed party over the 
+years.  
+  
+  
+```{r Part8, message=FALSE, warning=FALSE}
+
+# Count the distinct parties per person 
+# Some parties are redundant for the same person
+tbl_affiliations_parties<- affiliations_clean_date %>% 
+  filter(party!="") %>% 
+  group_by(person_id, party) %>% 
+  summarise(summarise_parties=n_distinct(person_id, party)) %>% 
+  ungroup()
+
+# Summarise the number of affiliations per person (redundant rows cleaned)
+tbl_affiliations_count <- tbl_affiliations_parties %>% 
+  group_by(person_id) %>% 
+  summarise(count_of_affiliations=n())
+
+# Create list with the name of politicians and the affiliations count
+politicians_affiliations <- persons_clean_gender %>% 
+  left_join(tbl_affiliations_count, by = c("id"="person_id")) %>% 
+  filter(count_of_affiliations>=1) %>% 
+  nest_join(tbl_affiliations_parties, by = c("id"="person_id")) %>% 
+  mutate(full_name=str_glue("{lastname} {firstname}"))
+
+winner_affiliations <- politicians_affiliations %>% 
+  arrange(desc(count_of_affiliations)) %>% 
+  head(1)
+
+```
+
+  
+### Part 8 Findings  
+  
+In this dataset, we have a large number of affiliation data 
+(**`r nrow(affiliations_clean)`** rows of data). Unfortunately, 
+the field "party" was empty for 
+**`r nrow(filter(affiliations_clean,party==""))`** data rows.  
+
+There are **`r nrow(politicians_affiliations)`** politicians left where we have 
+data about their party affiliation(s):  
+  
+* **`r nrow(filter(tbl_affiliations_count,count_of_affiliations>1))`** 
+politicians have changed their affiliation once or more
+* **`r nrow(filter(tbl_affiliations_count,count_of_affiliations>3))`**
+politicians have changed more than 3 times their affiliation  
+  
+And the politician with the most affiliations is :   
+**`r pull(winner_affiliations, count_of_affiliations)`** changes of 
+affiliation for **`r pull(winner_affiliations, full_name)`** (born in 
+**`r pull(winner_affiliations, year_of_birth)`**)  
+  
+  
+-------------------------------------------------------------------  
+
+## Part 9 / Putting a sample of politicians on the map  
+  
+For the ninth part of this report, we will select 20 addresses of politicians 
+in our data and pin them on a map...  
+  
+  
+```{r Graph_p9, message=FALSE, warning=FALSE}
+
+# Create list of addresses with names of politicians (recent entries)
+plot_addresses_with_person <- addresses_clean %>% 
+  filter(street!=""&postal_code!="") %>% 
+  left_join(persons_clean_gender, by = c("person_id"="id")) %>% 
+  filter(year_of_birth>1978&year_of_birth<1997) %>% 
+  mutate(full_name=str_glue("{lastname} {firstname}")) %>% 
+  select(full_name, gender, year_of_birth, street,
+         house_number, postal_code, city
+  ) %>% 
+  group_by(city) %>% 
+  mutate(city_index=row_number(city)) %>% 
+  filter(city_index==1) %>% 
+  ungroup() %>% 
+  head(20) %>% 
+  mutate(
+    street_API=str_replace_all(street," ","+"),
+    city_API=str_replace_all(city," ","+")
+  )  
+
+# Create list of API queries
+geo_API_prefix <- "https://geocode.xyz/"
+geo_API_suffix <- "?json=1&auth=410557014888485594403x5956"
+geo_API_addresses <- plot_addresses_with_person %>% 
+  transmute(
+    address_API=str_glue(
+      "{geo_API_prefix}{street_API}+{house_number}+",
+      "{postal_code}+{city_API}{geo_API_suffix}"
+    )
+  ) %>% 
+  pull()
+
+# Query to API geo service and extract longitude and latitude
+geo_coordinates <- geo_API_addresses %>% 
+  map(GET) %>% 
+  map(content) %>% 
+  map_df(extract, c("longt","latt"))
+
+# Final list with name, address and geo coordinates
+plot_addresses_complete <- plot_addresses_with_person %>% 
+  bind_cols(geo_coordinates) %>% 
+  mutate(
+    popup_content=str_glue(
+      "{street} {house_number}<br/><b>{postal_code} {city}</b>"
+    ),
+    longitude=as.numeric(longt),
+    latitude=as.numeric(latt)
+  ) %>% 
+  select(
+    full_name, gender, year_of_birth, street, house_number, postal_code,
+    city, longitude, latitude, popup_content
+  )
+
+plot_addresses_complete %>% 
+  leaflet() %>% 
+  addProviderTiles(providers$OpenStreetMap.CH) %>% 
+  addMarkers(
+    lng = ~longitude,
+    lat = ~latitude,
+    popup = ~popup_content
+  )
+
+```
+  
+  
+    
+
+  
+  
