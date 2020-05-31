@@ -630,12 +630,11 @@ summary_sports_metadata_infos <- bind_rows(
   summary_sports_metadata_infos_1,
   summary_sports_metadata_infos_2,
   summary_sports_metadata_infos_3,
-  summary_sports_metadata_infos_6,
+  summary_sports_metadata_infos_4,
   summary_sports_metadata_infos_5,
-  summary_sports_metadata_infos_4
+  summary_sports_metadata_infos_6
 )
   
-
 ```
 
 
