@@ -561,10 +561,12 @@ assembly in pie-charts for an easy visualization.
 
 # Prepare data for graphic
 mandates_clean_date_g3 <- mandates_clean_date %>% 
-  filter(
-    mandate_start_date<"1999-12-31"|mandate_start_date=="2020-01-01",
-    mandate_end_date>"2000-12-31"
-  ) %>% 
+  filter(year(mandate_start_date)<=2000 & year(mandate_end_date)>=2000) %>% 
+# OLD 
+#  filter(
+#    mandate_start_date<"1999-12-31"|mandate_start_date=="2020-01-01",
+#    mandate_end_date>"2000-12-31"
+#  ) 
   left_join(
     affiliations_clean_date, by = c("id"="mandate_id")
   ) %>% 
@@ -578,7 +580,7 @@ pie_pol_by_assembly_2000 <- mandates_clean_date_g3 %>%
   ungroup()
 
 # Summarise to get total count per assembly
-total_by_assembly_g3 <- pie_pol_by_assembly_2000 %>% 
+total_by_assembly_g3 <- pie_pol_by_assembly_2000 %>%
   group_by(assembly) %>% 
   summarise(total_count=sum(count_rows)) %>% 
   ungroup()
@@ -1433,7 +1435,7 @@ plot_addresses_with_person <- addresses_clean %>%
 
 # Create list of API queries
 geo_API_prefix <- "https://geocode.xyz/"
-geo_API_suffix <- "?json=1&auth=410557014888485594403x5956"
+geo_API_suffix <- "?json=1"
 geo_API_addresses <- plot_addresses_with_person %>% 
   transmute(
     address_API=str_glue(

@@ -191,14 +191,21 @@ athletes_by_games_occurrences <- country %>%
   select(athlete_id, games) %>% 
   distinct() %>% 
   group_by(athlete_id) %>% 
-  mutate(occurrences = n()) %>% 
+  summarise(occurrences=n()) %>% 
+
+# OLD
+#  mutate(occurrences = n()) %>% 
+
   arrange(desc(occurrences)) %>% 
   ungroup()
 
 # Filter the top 10 (12) athletes and add name
 athletes_top10_by_games <- athletes_by_games_occurrences %>% 
-  select(athlete_id,occurrences) %>% 
-  distinct() %>% 
+
+# OLD
+#  select(athlete_id,occurrences) %>% 
+#  distinct() %>% 
+
   top_n(10, occurrences) %>% 
   mutate(occurrences=str_c(occurrences," Olympic games")) %>%
   left_join(athletes, by = c("athlete_id"="id"))

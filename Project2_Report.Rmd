@@ -76,7 +76,6 @@ myTheme <- function(base_size = 7.5,
   panel.grid.major.y = element_line(color="grey75"),
   panel.grid.minor = element_blank(),
   plot.margin=unit(c(12,12,12,12), "points"),
-#  panel.spacing = unit(c(0,0,0,0), "points"),
   plot.title = element_text(face = "bold", size = 12),
   plot.subtitle = element_text(
     face = "italic",
@@ -152,8 +151,12 @@ There were **`r participants_count`** participants in this survey.
 
 # Get the data type of each column
 list_col_datatype <- tbl_survey_clean %>% 
-  map(class) %>% 
-  unlist()
+  map_chr(class)
+#  OLD
+#     map_chr() return a character vector (expected result)
+#     Same as workflow 'map() %>% unlist()' but shorter and more readable
+#  map(class) %>% 
+#  unlist()
 
 # And the column associated to the datatype list
 list_col_names <- tbl_survey_clean %>% 
@@ -192,9 +195,13 @@ tbl_columns %>%
 
 # Top 3 universities by number of participants
 tbl_top3_universities_by_participants <- tbl_survey_clean %>% 
-  group_by(university) %>% 
-  summarise(count_part_by_university=n()) %>% 
-  arrange(desc(count_part_by_university))
+  count(university, sort = TRUE, name = "count_part_by_university")
+# OLD
+#     Replace workflow 'group_by() %>% summarise(n()) %>% arrange(desc(n)))' 
+#     by 'count()' with parameters
+#  group_by(university) %>% 
+#  summarise(count_part_by_university=n()) %>% 
+#  arrange(desc(count_part_by_university))
 
 ```
   
@@ -207,7 +214,7 @@ tbl_top3_universities_by_participants %>%
   mutate(count_part_by_university=cell_spec(
     count_part_by_university, "html", align = "justify")
     ) %>%
-  top_n(3,count_part_by_university) %>% 
+  top_n(3, count_part_by_university) %>% 
   rename("University"=university,
          "Number of participants"=count_part_by_university) %>% 
   kable("html", escape = F) %>% 
@@ -231,10 +238,14 @@ number of survey participants according to their different position.
 ```{r Graph_p2, message=FALSE, warning=FALSE}
 
 summary_for_hbar_graph <- tbl_survey_clean %>% 
-  group_by(position) %>% 
-  summarize(count_per_position=n()) %>% 
-  ungroup() %>% 
-  arrange(count_per_position)
+  count(position, sort = TRUE, name = "count_per_position")
+# OLD (same as Var_p1.3) 
+#     Replace workflow 'group_by() %>% summarise(n()) %>% arrange(desc(n)))' 
+#     by 'count()' with parameters
+#  group_by(position) %>% 
+#  summarize(count_per_position=n()) %>% 
+#  ungroup() %>% 
+#  arrange(count_per_position)
 
 # Reorder the data according to count_per_position (set 'levels' in table)
 summary_for_hbar_graph$position <- factor(
@@ -268,8 +279,13 @@ summary_for_hbar_graph %>%
     ) +
   myTheme() +
   theme(
-    axis.title.x = element_text(margin = margin(12,3,3,3,"pt")),
+    axis.title.x = element_text(margin = margin(6,3,3,3,"pt")),
     axis.title.y = element_text(hjust = 0.9),
+    axis.text.x = element_text(
+      size = 9, face = "bold",
+      hjust = 0.5,
+      margin = margin(3,0,0,0,"pt")
+      ),
     axis.text.y = element_text(
       size = 9, face = "bold",
       margin = margin(0,6,0,0,"pt")
@@ -311,10 +327,14 @@ tbl_survey_clean <- tbl_survey_clean %>%
   ))
 
 summary_tbl_survey_clean <- tbl_survey_clean %>% 
-  group_by(sizes) %>% 
-  summarize(count_per_size=n()) %>% 
-  ungroup() %>% 
-  arrange(count_per_size)
+    count(sizes, sort = TRUE, name = "count_per_size")
+# OLD (same as Var_p1.3) 
+#     Replace workflow 'group_by() %>% summarise(n()) %>% arrange(desc(n)))' 
+#     by 'count()' with parameters
+#  group_by(sizes) %>% 
+#  summarize(count_per_size=n()) %>% 
+#  ungroup() %>% 
+#  arrange(count_per_size)
 
 # Reorder the data according to count_per_size (set 'levels' in table)
 summary_tbl_survey_clean$sizes <- factor(
@@ -353,7 +373,7 @@ summary_tbl_survey_clean %>%
     axis.title.y = element_text(margin = margin(3,12,3,3,"pt")),
     axis.text.x = element_text(
       size = 9, face = "bold",
-      margin = margin(0,6,0,0,"pt"),
+      margin = margin(3,6,0,0,"pt"),
       hjust = 0.5,
       ),
     axis.text.y = element_text(

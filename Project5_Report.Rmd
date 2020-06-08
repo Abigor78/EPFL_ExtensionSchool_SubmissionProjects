@@ -68,56 +68,68 @@ Here are some informations from The Movie Database used in this exercise:
 # Import the data from the internet site
 # with_genres 18 = Drama
 # sort by revenue.desc
-qry_01_highest_grossing_dramas_2010 <- GET(
+# Extract the 'original_title', 'title' and 'release_date
+qry_highest_grossing_dramas_2010 <- GET(
   str_glue("https://api.themoviedb.org/3/",
   "discover/movie?api_key=cae3b93dd5e2d16994763563ea0a2eb5",
   "&with_genres=18&primary_release_year=2010",
-  "&sort_by=revenue.desc")) 
-
-# Flatten the result to extract the data
-qry_01_highest_grossing_dramas_2010 <- qry_01_highest_grossing_dramas_2010 %>% 
+  "&sort_by=revenue.desc")) %>% 
   content() %>% 
-  flatten()
+  purrr::pluck("results") %>% 
+  map(extract, c("original_title", "title", "release_date")) 
+
+# Reshape data into a clean tibble 
+result_highest_grossing_dramas_2010 <- qry_highest_grossing_dramas_2010 %>%
+  enframe() %>% 
+  unnest_wider(value) %>% 
+  rename("#"=name)
+
+
+# OLD
+# Flatten the result to extract the data
+#qry_highest_grossing_dramas_2010 <- qry_highest_grossing_dramas_2010 %>% 
+#  content() %>% 
+#  flatten()
 
 # Extract the original_title as a 1 column tibble
-qry_list_original_title1 <- qry_01_highest_grossing_dramas_2010 %>% 
-  map(extract, "original_title") %>% 
-  flatten() %>% 
-  tibble() %>%
-  rename("original_title"=".") %>% 
-  filter(original_title!="NA")
+#qry_list_original_title1 <- qry_highest_grossing_dramas_2010 %>% 
+#  map(extract, "original_title") %>% 
+#  flatten() %>% 
+#  tibble() %>%
+#  rename("original_title"=".") %>% 
+#  filter(original_title!="NA")
 
 # Extract the title as a 1 column tibble
-qry_list_title1 <- qry_01_highest_grossing_dramas_2010 %>% 
-  map(extract, "title") %>% 
-  flatten() %>% 
-  tibble()  %>%
-  rename("title"=".") %>% 
-  filter(title!="NA")
+#qry_list_title1 <- qry_highest_grossing_dramas_2010 %>% 
+#  map(extract, "title") %>% 
+#  flatten() %>% 
+#  tibble()  %>%
+#  rename("title"=".") %>% 
+#  filter(title!="NA")
 
 # Extract the release_date as a 1 column tibble
-qry_list_release_date1 <- qry_01_highest_grossing_dramas_2010 %>% 
-  map(extract, "release_date") %>% 
-  flatten() %>% 
-  tibble() %>% 
-  rename("release_date"=".") %>% 
-  filter(release_date!="NA")
+#qry_list_release_date1 <- qry_highest_grossing_dramas_2010 %>% 
+#  map(extract, "release_date") %>% 
+#  flatten() %>% 
+#  tibble() %>% 
+#  rename("release_date"=".") %>% 
+#  filter(release_date!="NA")
 
 # Binding the 3 tibbles to have one clean tibble for our answers
-result_01_highest_grossing_dramas_2010 <- bind_cols(
-  qry_list_original_title1,
-  qry_list_title1,
-  qry_list_release_date1
-  ) %>% 
-  rownames_to_column() %>% 
-  rename("#"="rowname")
+#result_highest_grossing_dramas_2010 <- bind_cols(
+#  qry_list_original_title1,
+#  qry_list_title1,
+#  qry_list_release_date1
+#  ) %>% 
+#  rownames_to_column() %>% 
+#  rename("#"="rowname")
 
 ```
   
 Here is a table with the 10 highest grossing dramas from 2010:  
 
 ```{r Data_result_p1.1, message=FALSE, warning=FALSE}
-result_01_highest_grossing_dramas_2010 %>%  
+result_highest_grossing_dramas_2010 %>%  
   head(10) %>% 
   rename(
     "Original title"=original_title,
@@ -139,47 +151,59 @@ result_01_highest_grossing_dramas_2010 %>%
 # Import the data from the internet site
 # with_people 23659 = Will Ferrell and 3896 = Liam Neeson
 # sort by popularity.desc
-qry_02_Will_Ferrell_and_Liam_Neeson  <- GET(
+# Extract the 'original_title', 'title' and 'release_date
+qry_Will_Ferrell_and_Liam_Neeson  <- GET(
   str_glue("https://api.themoviedb.org/3/",
   "discover/movie?api_key=cae3b93dd5e2d16994763563ea0a2eb5",
   "&with_people=23659,3896",
-  "&sort_by=popularity.desc")) 
-
-# Flatten the result to extract the data
-qry_02_Will_Ferrell_and_Liam_Neeson <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
+  "&sort_by=popularity.desc")) %>% 
   content() %>% 
-  flatten()
+  purrr::pluck("results") %>% 
+  map(extract, c("original_title", "title", "release_date")) 
+
+# Reshape data into a clean tibble 
+result_Will_Ferrell_and_Liam_Neeson <- qry_Will_Ferrell_and_Liam_Neeson %>% 
+  enframe() %>% 
+  unnest_wider(value) %>% 
+  rename("#"=name)
+
+
+# OLD
+# Flatten the result to extract the data
+#qry_02_Will_Ferrell_and_Liam_Neeson <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
+#  content() %>% 
+#  flatten()
 
 # Extract the original_title as a 1 column tibble
-qry_list_original_title2 <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
-  map(extract, "original_title") %>% 
-  flatten() %>% 
-  tibble() %>%
-  rename("original_title"=".") %>% 
-  filter(original_title!="NA")
+#qry_list_original_title2 <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
+#  map(extract, "original_title") %>% 
+#  flatten() %>% 
+#  tibble() %>%
+#  rename("original_title"=".") %>% 
+#  filter(original_title!="NA")
 
 # Extract the title as a 1 column tibble
-qry_list_title2 <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
-  map(extract, "title") %>% 
-  flatten() %>% 
-  tibble()  %>% 
-  rename("title"=".") %>% 
-  filter(title!="NA")
+#qry_list_title2 <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
+#  map(extract, "title") %>% 
+#  flatten() %>% 
+#  tibble()  %>% 
+#  rename("title"=".") %>% 
+#  filter(title!="NA")
 
 # Extract the release_date as a 1 column tibble
-qry_list_release_date2 <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
-  map(extract, "release_date") %>% 
-  flatten() %>% 
-  tibble() %>% 
-  rename("release_date"=".") %>% 
-  filter(release_date!="NA")
+#qry_list_release_date2 <- qry_02_Will_Ferrell_and_Liam_Neeson %>% 
+#  map(extract, "release_date") %>% 
+#  flatten() %>% 
+#  tibble() %>% 
+#  rename("release_date"=".") %>% 
+#  filter(release_date!="NA")
 
 # Binding the 3 tibbles to have one clean tibble for our answers
-result_02_Will_Ferrell_and_Liam_Neeson <- bind_cols(
-  qry_list_original_title2,
-  qry_list_title2,
-  qry_list_release_date2
-  ) 
+#result_02_Will_Ferrell_and_Liam_Neeson <- bind_cols(
+#  qry_list_original_title2,
+#  qry_list_title2,
+#  qry_list_release_date2
+#  ) 
 
 ```
   
@@ -187,7 +211,7 @@ Here is a table with all the movies starring Will Ferrell and Liam Neeson:
 
 ```{r Data_result_p1.2, message=FALSE, warning=FALSE}
 
-result_02_Will_Ferrell_and_Liam_Neeson %>%  
+result_Will_Ferrell_and_Liam_Neeson %>%  
   rename(
     "Original title"=original_title,
     "Title"=title,
@@ -209,7 +233,7 @@ result_02_Will_Ferrell_and_Liam_Neeson %>%
 # Import the data from the internet site
 # with_people 500 = Tom Cruise 
 # with_genres 10751 = Family
-qry_03_Tom_Cruise_for_kids  <- GET(
+qry_Tom_Cruise_for_kids  <- GET(
   str_glue("https://api.themoviedb.org/3/",
   "discover/movie?api_key=cae3b93dd5e2d16994763563ea0a2eb5",
   "&with_people=500&with_genres=10751",
@@ -255,32 +279,40 @@ content of the result and build a tibble with the different values in columns.
   
 ```{r Data_import_prep_p2.2, message=FALSE, warning=FALSE}
 
-# Flatten the result to extract the data
-qry_Pixar_company <- qry_Pixar_company %>% 
+# Reshape the data to have a clean tibble
+result_Pixar_company <- qry_Pixar_company %>% 
   content() %>% 
-  flatten()
+  purrr::pluck("results") %>% 
+  map(extract, c("id", "name")) %>% 
+  enframe() %>% 
+  rename(index = name, value_list = value) %>% 
+  unnest_wider(value_list) %>% 
+  rename(company_name = name)
 
+
+# OLD
 # Extract the company name as a 1 column tibble
-qry_Pixar_company1 <- qry_Pixar_company %>% 
-  map(extract, "name") %>% 
-  flatten() %>% 
-  tibble() %>% 
-  rename("company_name"=".") %>% 
-  filter(company_name!="NA")
+#qry_Pixar_company1 <- qry_Pixar_company %>% 
+#  map(extract, "name") %>% 
+#  flatten() %>% 
+#  tibble() %>% 
+#  rename("company_name"=".") %>% 
+#  filter(company_name!="NA")
 
 # Extract the ID as a 1 column tibble
-qry_Pixar_company2 <- qry_Pixar_company %>% 
-  map(extract, "id") %>% 
-  flatten() %>% 
-  tibble()  %>% 
-  rename("id"=".") %>% 
-  filter(id!="NA")
+#qry_Pixar_company2 <- qry_Pixar_company %>% 
+#  map(extract, "id") %>% 
+#  flatten() %>% 
+#  tibble()  %>% 
+#  rename("id"=".") %>% 
+#  filter(id!="NA")
 
 # Binding the 2 tibbles to have one clean tibble for our answers
-result_Pixar_company <- bind_cols(
-  qry_Pixar_company1,
-  qry_Pixar_company2
-  ) 
+#result_Pixar_company <- bind_cols(
+#  qry_Pixar_company1,
+#  qry_Pixar_company2
+#  ) 
+
 ```
   
 And then, I extract the ID from my tibble (filtered on **Pixar**).
@@ -335,45 +367,58 @@ qry_Pixar_movies2 <- GET(
 get_movie_details <- function(raw_data) {
   
   qry_movies <- raw_data %>% 
-  content() %>% 
-  flatten()
+    content() %>%
+    purrr::pluck("results") %>% 
+    map(
+      extract, c(
+      "original_title", 
+      "release_date", 
+      "vote_average", 
+      "overview"
+      )
+    ) %>% 
+    enframe() %>% 
+    unnest_wider(value) %>% 
+    select(-name)
+    
   
+# OLD  
   # Extract the original title as a 1 column tibble
-  prep_movies1 <- qry_movies %>% 
-  map(extract, "original_title") %>% 
-  flatten() %>% 
-  tibble() %>% 
-  rename("original_title"=".") 
+#  prep_movies1 <- qry_movies %>% 
+#  map(extract, "original_title") %>% 
+#  flatten() %>% 
+#  tibble() %>% 
+#  rename("original_title"=".") 
 
   # Extract the release_date as a 1 column tibble
-  prep_movies2 <- qry_movies %>% 
-  map(extract, "release_date") %>% 
-  flatten() %>% 
-  tibble() %>% 
-  rename("release_date"=".")
+#  prep_movies2 <- qry_movies %>% 
+#  map(extract, "release_date") %>% 
+#  flatten() %>% 
+#  tibble() %>% 
+#  rename("release_date"=".")
   
   # Extract the vote_average as a 1 column tibble
-  prep_movies3 <- qry_movies %>% 
-  map(extract, "vote_average") %>% 
-  flatten() %>% 
-  tibble() %>% 
-  rename("vote_average"=".")
+#  prep_movies3 <- qry_movies %>% 
+#  map(extract, "vote_average") %>% 
+#  flatten() %>% 
+#  tibble() %>% 
+#  rename("vote_average"=".")
   
   # Extract the overview as a 1 column tibble
-  prep_movies4 <- qry_movies %>% 
-  map(extract, "overview") %>% 
-  flatten() %>% 
-  tibble() %>% 
-  rename("overview"=".")
+#  prep_movies4 <- qry_movies %>% 
+#  map(extract, "overview") %>% 
+#  flatten() %>% 
+#  tibble() %>% 
+#  rename("overview"=".")
 
   # Binding all columns to create one tibble of results
-  bind_cols(
-  prep_movies1,
-  prep_movies2,
-  prep_movies3,
-  prep_movies4
-  ) %>% 
-  filter(original_title!="NA")
+#  bind_cols(
+#  prep_movies1,
+#  prep_movies2,
+#  prep_movies3,
+#  prep_movies4
+#  ) %>% 
+#  filter(original_title!="NA")
 
 }
 

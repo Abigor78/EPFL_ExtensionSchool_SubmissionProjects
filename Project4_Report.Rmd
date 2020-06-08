@@ -834,7 +834,7 @@ map_plot <- tbl_rental_offers_with_postcode %>%
 
 # Create list of API queries
 geo_API_prefix <- "https://geocode.xyz/"
-geo_API_suffix <- "?json=1&auth=410557014888485594403x5956"
+geo_API_suffix <- "?json=1"
 geo_API_addresses <- map_plot %>% 
   mutate(
     location=str_replace_all(location,","," "),
