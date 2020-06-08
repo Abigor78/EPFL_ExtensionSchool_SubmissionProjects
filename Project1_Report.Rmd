@@ -698,3 +698,6 @@ Globally speaking, the professors and the students share the same view on :
 They are totally opposed on only :  
 **`r vec_count_of_answer_weights[4]`** questions (**`r vec_pc_of_total[4]`%**)  
   
+
+```{r Report1, message=FALSE, warning=FALSE}
+```
